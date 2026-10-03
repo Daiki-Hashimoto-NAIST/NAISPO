@@ -1,0 +1,980 @@
+あなたは、現在開いているUnityプロジェクト「Naispo_shadow」を実際に編集し、
+Azure Kinect DKを利用したリアルタイム人体シルエットインタラクションを実装してください。
+
+このプロジェクトは新規作成したUniversal 2Dプロジェクトで、現時点ではほぼ未編集です。
+
+重要:
+単にコード例を回答するのではなく、このUnityプロジェクトそのものを調査・編集・構築してください。
+Unity Editor操作が必要な場合は、利用可能なUnity CLI / Unity Pipeline / MCPを使用してください。
+
+実装後は必ずUnityで再コンパイルし、Consoleエラーを確認し、
+自分で修正可能なエラーは修正してください。
+
+==================================================
+0. 既知の環境
+==================================================
+
+OS:
+Windows x64
+
+Unity:
+6000.6.4f1
+
+Project:
+Universal 2D / URP
+
+Project root:
+現在Codexが開いている Naispo_shadow
+
+Azure Kinect Sensor SDK:
+1.4.2 インストール済み
+
+Azure Kinect Body Tracking SDK:
+1.1.2 インストール済み
+
+Azure Kinect公式サンプル:
+k4abt_simple_3d_viewer が正常動作している。
+
+したがって、
+- Azure Kinect DKの接続
+- Depth取得
+- Body Tracking
+- Skeleton取得
+- Body Index Map / silhouette取得
+は、このPC上では正常動作することが確認済み。
+
+Unity CLI:
+使用可能
+
+Unity Pipeline:
+このプロジェクトにインストール済み
+
+Codex用Unity MCP設定:
+設定済み
+
+==================================================
+1. 最終目的
+==================================================
+
+Azure Kinectで最大3人程度をリアルタイムBody Trackingし、
+
+1.
+各人物のシルエットをUnity 2D上にリアルタイム表示する。
+
+2.
+人物ごとに異なる色でシルエットを表示する。
+
+3.
+表示は鏡のように左右反転する。
+ユーザーが右へ動けば、ユーザーから見た画面上でも自然に右へ動くようにする。
+
+4.
+人体シルエットに2Dの当たり判定を生成する。
+
+5.
+シルエットによってRigidbody2Dのボールを押せるようにする。
+
+6.
+ボールはトップダウン型のエアホッケーのように動く。
+重力はない。
+
+7.
+画面外周にはColliderの壁を設け、
+ボールが壁に衝突すると跳ね返る。
+
+将来的には、
+シルエットを利用してキャラクターや様々なオブジェクトと
+インタラクションするシステムへ拡張する。
+
+そのため、一時的なハードコードではなく、
+後から機能追加しやすい構成にすること。
+
+==================================================
+2. 最初に必ず環境を調査する
+==================================================
+
+いきなり実装を始めないこと。
+
+まず以下を調査してください。
+
+- Assets
+- Packages
+- ProjectSettings
+- Unityバージョン
+- Universal 2D / URP構成
+- com.unity.pipeline
+- Unity CLI接続状態
+- Unity Editor接続状態
+- 現在のScene
+- Console / compile errors
+- Azure Kinect Sensor SDK 1.4.2 の実インストール場所
+- Azure Kinect Body Tracking SDK 1.1.2 の実インストール場所
+- 利用可能なmanaged DLL
+- 利用可能なnative DLL
+- Azure Kinect Body Trackingのモデルファイル
+- PATH等の既存環境
+- k4abt_simple_3d_viewerが使用しているSDK構成
+
+Azure KinectのAPI名、DLL名、ファイルパスを推測で書かないこと。
+
+実際にPCにインストールされているSDKを確認し、
+使用可能なmanaged API / native APIを特定してから実装してください。
+
+必要であればMicrosoftのインストール済みサンプルやSDK内のheader、
+managed assembly等を確認してください。
+
+k4abt_simple_3d_viewerのソースをそのままUnityへ移植するのではなく、
+Unity/C#に適した構成にしてください。
+
+==================================================
+3. 重大な問題があった場合
+==================================================
+
+以下の場合だけは勝手に別方式へ変更せず、作業を止めて私に質問してください。
+
+- 必須SDKが実際には見つからない
+- 必須managed wrapperを導入する方法が複数あり、重大な選択が必要
+- SDKやUnity自体のバージョン変更が必要
+- 大規模な外部パッケージ導入が必要
+- 管理者権限を伴うシステム変更が必要
+- Azure Kinect SDK自体の再インストールが必要
+- 既存SDKを削除・上書きする必要がある
+
+それ以外の通常の実装判断は、自律的に進めて構いません。
+
+UnityやPackageのバージョンを勝手にアップグレードしないこと。
+
+==================================================
+4. Kinect撮影設定
+==================================================
+
+想定する人物までの距離:
+
+約2.5 m ～ 4.0 m
+
+Azure Kinectは通常の横向きで設置する。
+
+初期設定:
+
+DepthMode:
+NFOV_2x2Binned
+
+想定Depth解像度:
+320 x 288
+
+Camera FPS:
+30 fps
+
+Color Camera:
+OFF
+
+RGB映像は今回使用しない。
+
+Body Tracking:
+Windows上で利用可能なGPU / DirectML処理を優先する。
+
+ただし、実際にBody Tracking SDK 1.1.2のmanaged APIを調査し、
+正しいenum/APIを使用すること。
+
+GPU初期化が失敗した場合のみ、
+明確なログを出してCPU fallbackを検討すること。
+
+Sensor orientation:
+Default
+
+Skeleton temporal smoothing:
+初期値 0.2 程度
+
+ただしInspectorから変更可能にする。
+
+重要:
+DepthModeはコードに完全固定しない。
+
+Inspectorまたは設定クラスから少なくとも
+
+- NFOV_2x2Binned
+- NFOV_Unbinned
+- WFOV_2x2Binned
+
+など、SDKが対応するモードへ変更できる設計にする。
+
+将来的に実際の展示スペースで
+距離・人数・撮影範囲を確認して変更できるようにする。
+
+==================================================
+5. Kinect処理スレッド
+==================================================
+
+Kinect取得とBody Trackingによって
+Unity Main Threadをブロックしないこと。
+
+推奨構成:
+
+Worker Thread
+    ↓
+Azure Kinect Capture
+    ↓
+Body Tracking
+    ↓
+最新Body Frame
+    ↓
+BodyIndexMapをCPU側バッファへコピー
+    ↓
+Body情報をコピー
+    ↓
+Latest Frame Buffer
+
+Unity Main Thread
+    ↓
+最新データだけ取得
+    ↓
+Texture更新
+    ↓
+GameObject / Collider更新
+
+古い未処理フレームを延々キューに貯めない。
+
+リアルタイム性を優先し、
+最新フレームを利用する。
+
+UnityEngineのAPIをWorker Threadから呼ばないこと。
+
+Capture / Image / BodyFrame / Trackerなど、
+Disposeが必要なSDKオブジェクトは確実に解放すること。
+
+Play Mode終了、
+OnDisable、
+OnDestroy、
+OnApplicationQuit
+
+のいずれでも安全にKinectを停止できるようにする。
+
+停止時にThreadが残らないこと。
+
+==================================================
+6. 最大3人のBody Tracking
+==================================================
+
+最大3人を表示・処理する。
+
+Body Index Mapの単純なpixel valueだけを
+永続的な人物IDとして扱わないこと。
+
+Frame内のbody indexとSDKのBody IDとの対応を利用して、
+人物を識別すること。
+
+最大3つのColor Slotを用意する。
+
+例:
+
+Body slot 0:
+Cyan
+
+Body slot 1:
+Magenta
+
+Body slot 2:
+Yellow
+
+色はInspectorから変更可能にしてもよい。
+
+同じBody IDが追跡されている間は、
+できるだけ同じ色を維持する。
+
+人物がTracking Lostになった場合には、
+短いtimeout後にColor Slotを解放する。
+
+4人以上認識された場合には、
+最大3人だけ処理する。
+
+今回の通常運用では最大3人を想定しているため、
+複雑すぎる人物選択アルゴリズムは不要。
+
+==================================================
+7. シルエット表示
+==================================================
+
+BodyIndexMapから、
+人体シルエットTextureを生成する。
+
+背景:
+透明
+
+人体:
+Body IDごとの色
+
+Unity Cameraの背景:
+初期状態では黒
+
+こうすることで将来的に
+Camera背景やSprite等を変更するだけで、
+任意画像・映像の背景へ交換可能にする。
+
+Textureは毎フレームnewしない。
+
+Texture2D等を初期化時に一度生成し、
+データだけ更新する。
+
+不要なGC allocationをできるだけ避ける。
+
+==================================================
+8. 左右反転
+==================================================
+
+表示をMirrorする。
+
+ただし、
+
+Silhouette Rendering
+Collider
+Pixel → World mapping
+
+で左右反転の処理がバラバラにならないようにする。
+
+mirrorX = true
+
+のような共通設定を用意して、
+同じ座標変換ロジックを利用する。
+
+二重反転が発生しないよう注意する。
+
+==================================================
+9. Kinect画像とUnity画面のAspect Ratio
+==================================================
+
+人体の縦横比を絶対に変形させない。
+
+KinectのDepth画像を
+Unity Cameraの表示領域へAspect Fitする。
+
+Stretchは禁止。
+
+例:
+
+Kinect:
+320 x 288
+
+Output:
+16:9
+
+の場合でも、
+320:288の人体形状を保ったまま
+Unity Camera中央へfitする。
+
+余った領域は背景が見える状態にする。
+
+1920 x 1080を主要な出力解像度として想定するが、
+1920 x 1080にハードコードしない。
+
+Game View / ScreenのAspect Ratioが変わっても
+可能な範囲でAspect Fitが維持される構成にする。
+
+Pixel座標からUnity World座標への変換を
+専用クラスまたは専用メソッドへ集約する。
+
+例:
+
+KinectViewportMapper
+
+RenderingとColliderの両方が
+全く同じMapperを利用すること。
+
+==================================================
+10. シルエットCollider
+==================================================
+
+初期実装では、
+
+BodyIndexMap
+    ↓
+PersonごとのBinary Mask
+    ↓
+Maskの軽いnoise除去
+    ↓
+Contour extraction
+    ↓
+Contour simplification
+    ↓
+PolygonCollider2D
+
+という方式を使用する。
+
+将来的にSDF / GPUベースのcollisionへ交換できるよう、
+Silhouette取得部分とCollider生成部分を分離する。
+
+OpenCVのような大きな外部依存は、
+最初から安易に追加しない。
+
+まずはC#で実装可能な
+
+- connected components
+- contour tracing / marching squares相当
+- Ramer-Douglas-Peucker等の輪郭簡略化
+
+を検討する。
+
+ただし、
+実装品質を著しく下げる場合には勝手に外部Packageを導入せず、
+私に相談すること。
+
+==================================================
+11. Colliderの仕様
+==================================================
+
+人物のシルエットは「固体」として扱う。
+
+各人物に対して、
+
+GameObject
+    PersonSilhouetteCollider_x
+
+Rigidbody2D:
+Kinematic
+
+PolygonCollider2D:
+シルエット輪郭
+
+という構成を基本とする。
+
+Mask内に非常に小さな孤立noiseがある場合は無視する。
+
+身体内の小さなholeも、
+今回の用途では原則としてSolidとして埋めてよい。
+
+セグメンテーションによって身体が複数componentへ
+分離された場合も考慮する。
+
+PolygonCollider2Dの複数Path等を利用できる場合には
+必要に応じて利用する。
+
+ただし数pixel程度のゴミcomponentはColliderにしない。
+
+Colliderの輪郭点数を無制限に増やさない。
+
+RDP等を利用して簡略化する。
+
+初期パラメータ例:
+
+minimum component area:
+Inspectorで調整可能
+
+contour simplification epsilon:
+約2～4 pixelから開始
+
+maximum contour points:
+必要なら128～256点程度/bodyを目安
+
+これらは実際のパフォーマンスに合わせて調整可能にする。
+
+==================================================
+12. Collider更新負荷
+==================================================
+
+Silhouette描画は可能な限りKinectの30fpsで更新する。
+
+Collider更新もまずはリアルタイム性を優先する。
+
+ただしColliderの再構築がボトルネックになった場合に備えて、
+
+colliderUpdateRate
+
+をInspectorから設定できるようにする。
+
+例:
+
+30 Hz
+20 Hz
+15 Hz
+
+初期値は20～30Hz程度から開始してよい。
+
+性能低下を隠すために勝手に大きく更新頻度を落とさない。
+
+==================================================
+13. エアホッケーPhysics
+==================================================
+
+テスト用Sceneを作成する。
+
+Camera:
+Orthographic
+
+Gravity:
+ボールには使用しない。
+
+Ball GameObject:
+
+- SpriteRenderer
+- CircleCollider2D
+- Rigidbody2D
+- Body Type = Dynamic
+- Gravity Scale = 0
+- Collision Detection = Continuous
+- Interpolateを適切に設定
+- 極端なDragは使用しない
+
+ボールは人のシルエットによって押されて移動する。
+
+画面4辺にColliderを設置する。
+
+例:
+
+TopWall
+BottomWall
+LeftWall
+RightWall
+
+壁は画面表示領域の外周に追従する。
+
+BallとWallには必要に応じてPhysicsMaterial2Dを使用する。
+
+エアホッケーのように、
+
+Friction:
+低い
+
+Bounciness:
+高め
+
+とする。
+
+ただし値をコード中に散在させず、
+調整しやすくする。
+
+初期値の一例:
+
+Friction = 0
+Bounciness = 0.8～0.95
+
+Unity 6での正しいPhysicsMaterial2D/APIを確認して使用する。
+
+ボールが高速移動時に壁や人体をすり抜けにくいようにする。
+
+==================================================
+14. 人体による「押す」動作
+==================================================
+
+最初はPolygonCollider2D + Rigidbody2Dによる
+Unity Physics2Dのcollisionで実装する。
+
+人体ColliderはKinematicとして扱う。
+
+シルエット形状の変化によってBallが
+不自然に完全停止したり、
+人体を通過したりしないことを確認する。
+
+重要:
+
+PolygonCollider2Dのpath更新だけでは、
+シルエット表面の運動速度がPhysicsへ十分伝わらず、
+Ballを自然に押せない可能性がある。
+
+実際に問題が確認された場合には、
+Architectureを壊さずに補助処理を追加してよい。
+
+例えば、
+
+- previous silhouetteとの変化
+- body centroid velocity
+- Skeleton joint velocity
+- contact point近傍の人体運動
+
+等からcontact velocityを推定して
+Ballへ適切なImpulseを与える方法。
+
+ただし最初から複雑化しすぎず、
+まずUnity Physics2Dだけで挙動を確認すること。
+
+この補助機構は、
+後からSDF collisionへ置き換えられるよう分離する。
+
+==================================================
+15. 将来的なSDF対応
+==================================================
+
+今回SDFは必須ではない。
+
+まずPolygonCollider2D版を完成させる。
+
+しかし、
+
+Kinect capture
+BodyIndexMap
+Silhouette rendering
+Coordinate mapping
+Collider generation
+
+を強く密結合させないこと。
+
+将来的に、
+
+BodyIndexMap
+    ↓
+GPU ComputeShader
+    ↓
+Signed Distance Field
+    ↓
+Normal
+    ↓
+Collision response
+
+へ変更できる構造にしておく。
+
+==================================================
+16. 推奨コード構成
+==================================================
+
+既存プロジェクトを確認した上で調整してよいが、
+おおむね以下の責務分離を目指す。
+
+Assets/
+    Scripts/
+        Kinect/
+            AzureKinectBodySource.cs
+            KinectSettings.cs
+            BodyFrameData.cs
+
+        Silhouette/
+            SilhouetteRenderer.cs
+            KinectViewportMapper.cs
+            SilhouetteContourExtractor.cs
+            SilhouetteColliderController.cs
+            BodyColorRegistry.cs
+
+        Interaction/
+            AirHockeyBall.cs
+            ScreenBoundaryController.cs
+
+        Core/
+            必要なmanager類
+
+クラス名は必要に応じて変更してよい。
+
+ただし、
+
+「Azure Kinectの取得」
+「描画」
+「輪郭抽出」
+「Collider」
+「ゲームPhysics」
+
+を1個の巨大MonoBehaviourにまとめないこと。
+
+==================================================
+17. Inspectorで変更できるようにする項目
+==================================================
+
+少なくとも以下をInspectorまたは設定Objectから変更可能にする。
+
+- Depth Mode
+- Camera FPS
+- Mirror X
+- Maximum Body Count = 3
+- Skeleton smoothing
+- Person colors
+- contour simplification
+- minimum component size
+- collider update rate
+- Body lost timeout
+- debug logging
+
+適切ならScriptableObjectを使用してもよい。
+
+ただし過剰設計は避ける。
+
+==================================================
+18. Debug機能
+==================================================
+
+開発用に最低限、
+
+- Kinect接続成功/失敗
+- Tracker作成成功/失敗
+- Depth mode
+- Body Tracking processing mode
+- Body count
+- Body IDs
+- BodyIndexMap size
+- Kinect FPS概算
+- Collider update FPS概算
+
+が確認できるようにする。
+
+毎フレーム大量のDebug.Logを出さない。
+
+定期的なsummaryまたはInspector表示程度にする。
+
+必要ならdebug overlayを作成してよいが、
+本実装の妨げになる場合には不要。
+
+==================================================
+19. Scene構築
+==================================================
+
+Unity CLI / Pipeline / MCPを使用可能なら、
+コードだけで終わらせずSceneも構築してください。
+
+Sceneには少なくとも、
+
+Main Camera
+KinectSystem
+SilhouetteRenderer
+Person collider管理Object
+Ball
+TopWall
+BottomWall
+LeftWall
+RightWall
+
+を用意する。
+
+必要なComponentと参照をInspectorに設定する。
+
+Sceneを保存する。
+
+新規Sceneを作る場合には、
+分かりやすい名前を付ける。
+
+例:
+
+Assets/Scenes/KinectSilhouetteDemo.unity
+
+==================================================
+20. SDK DLLについて
+==================================================
+
+SDK DLLを扱う際には、
+
+- 現在インストール済みの実ファイルを調査する
+- architectureはx86_64
+- Unity Plugin Import Settingsを確認する
+- 同名DLLを重複配置しない
+- system SDKを削除・変更しない
+
+こと。
+
+Assets/Plugins等へコピーが必要な場合には、
+本当に必要なDLLだけを配置する。
+
+何をどこからどこへコピーしたのか記録する。
+
+Body Tracking model等に
+明示的なpathが必要なら、
+SDK 1.1.2の実環境を調査して正しいpathを使用する。
+
+ユーザーPC固有の絶対パスを
+ゲームロジック全体へ散在させない。
+
+==================================================
+21. Error handling
+==================================================
+
+以下の場合にUnityがFreeze/Crashしないようにする。
+
+- Kinect未接続
+- Kinect抜線
+- Tracker初期化失敗
+- Bodyが0人
+- Bodyが突然Tracking Lost
+- BodyIndexMap取得失敗
+- Play Mode終了
+- Scene reload
+
+Kinectがない場合でも、
+Unity Editorそのものは正常に動作し続けること。
+
+エラー内容を分かりやすくConsoleへ出す。
+
+==================================================
+22. 検証
+==================================================
+
+実装途中および最後に、
+Unity CLIを使用して実際に検証すること。
+
+少なくとも、
+
+unity recompile
+
+または現在のUnity CLIで同等の
+コンパイル確認コマンドを実行する。
+
+Console errorを確認する。
+
+エラーがあれば原因を調査して修正する。
+
+可能ならPlay Modeへ入り、
+
+- Kinect初期化
+- Tracker初期化
+- Body detection
+- Texture creation
+- Scene objects
+
+まで確認する。
+
+Unity CLI / MCPからGame Viewや実センサー出力を
+視覚的に確認できない場合には、
+
+「確認できた」と推測で報告しないこと。
+
+その場合は、
+自動検証できた範囲と
+人間がGame Viewで確認すべき内容を明確に分ける。
+
+==================================================
+23. 実装フェーズ
+==================================================
+
+以下の順番で進める。
+
+Phase 1:
+環境・SDK・DLL・Unity接続調査
+
+Phase 2:
+Azure KinectをUnityから起動し、
+BodyIndexMapを取得
+
+Phase 3:
+BodyIndexMapをリアルタイムTextureとして表示
+
+Phase 4:
+最大3人のBody IDと色を対応させる
+
+Phase 5:
+Mirror + Aspect Fitを完成
+
+Phase 6:
+MaskからContourを生成
+
+Phase 7:
+PolygonCollider2Dを人物ごとに生成
+
+Phase 8:
+Air Hockey Ball + Screen Wallsを作成
+
+Phase 9:
+人体でBallを押せることを検証
+
+Phase 10:
+Profiler/性能を確認して明らかなGC・Main Thread blockを修正
+
+Phase 11:
+再コンパイル・Console確認・Scene保存
+
+途中フェーズの一部が失敗した場合に、
+完成していないのに次へ進んで問題を隠さないこと。
+
+==================================================
+24. 完了条件
+==================================================
+
+次を満たした時点を初期実装の完成とする。
+
+[ ] Unity compile error = 0
+
+[ ] Kinectが正常に初期化される
+
+[ ] Body Trackingが起動する
+
+[ ] 0～3人を認識できる
+
+[ ] 各人物が異なる色で表示される
+
+[ ] 人物の動きにリアルタイム追従する
+
+[ ] 左右Mirrorされる
+
+[ ] 人体のAspect Ratioが崩れない
+
+[ ] Kinect画像がUnity Camera領域へAspect Fitされる
+
+[ ] 人物ごとにSilhouette Colliderが生成される
+
+[ ] Colliderが身体の動きに追従する
+
+[ ] Ballが人体をすり抜けにくい
+
+[ ] 人体によってBallを押せる
+
+[ ] BallのGravity = 0
+
+[ ] Ballが画面外周で跳ね返る
+
+[ ] Play Modeを停止してもKinect thread/processが残らない
+
+[ ] Kinect未接続時もUnityがFreezeしない
+
+[ ] Sceneが保存されている
+
+==================================================
+25. ドキュメント
+==================================================
+
+最後に、
+
+AssetsまたはProject rootの適切な場所へ
+
+KINECT_SETUP.md
+
+のような短いドキュメントを作成する。
+
+以下を書く。
+
+- 使用SDK version
+- 使用したDLL
+- DLLの配置
+- Depth Mode
+- Body Tracking mode
+- Scene名
+- Kinect接続方法
+- Play方法
+- Inspectorの主要設定
+- Collider調整方法
+- 既知の制限
+- SDFへ発展する場合の変更箇所
+
+==================================================
+26. 最終報告
+==================================================
+
+作業終了時には簡潔に、
+
+1. 作成・変更したファイル
+2. Scene構成
+3. Azure Kinectとの接続方式
+4. Collider生成方式
+5. Unity CLIで検証した内容
+6. 残っているwarning/error
+7. 私がUnity Editorで実際に確認する手順
+8. 今後SDF化するときの入口
+
+を報告してください。
+
+物理センサーの映像や実際の人間による操作を
+自分で確認できていない場合には、
+その点を明示してください。
+
+==================================================
+27. 禁止事項
+==================================================
+
+- Unity Versionの変更
+- Universal 2Dから別Templateへの変更
+- Azure Kinect SDKの勝手なアップグレード
+- SDKの勝手なアンインストール
+- 不要なPackageの大量追加
+- Library / Temp / Logsの手編集
+- 毎フレーム大量のGC allocation
+- Unity Main Threadでのblocking Kinect capture
+- 毎フレームTexture2Dをnew
+- Kinect画像の縦横比を16:9へStretch
+- Body Indexのframe内indexを永続Body IDと誤認
+- 実際には確認していない動作を「確認済み」と報告
+- コンパイルエラーを残したまま完成扱い
+
+以上の条件で実装を開始してください。
+
+まず環境調査を行い、
+その結果から実装方法を決定し、
+重大な問題がなければそのままPhase 2以降へ進んでください。

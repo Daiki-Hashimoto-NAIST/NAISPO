@@ -1,0 +1,56 @@
+[
+  {
+    "source": "C:\\Program Files\\Azure Kinect SDK v1.4.2\\sdk\\netstandard2.0\\release\\Microsoft.Azure.Kinect.Sensor.dll",
+    "destination": "Assets/Plugins/AzureKinect/Managed/Microsoft.Azure.Kinect.Sensor.dll",
+    "sha256": "B23F4D5848D42226F41CA1D54F24B2B1F4A67F93992B37B0A4CDD2ADE9983A45",
+    "bytes": 72112
+  },
+  {
+    "source": "C:\\Program Files\\Azure Kinect Body Tracking SDK\\sdk\\netstandard2.0\\release\\microsoft.azure.kinect.bodytracking.dll",
+    "destination": "Assets/Plugins/AzureKinect/Managed/Microsoft.Azure.Kinect.BodyTracking.dll",
+    "sha256": "37F8B8C8E18839292292B36B25CF8BBA7BBCDF171BF24C84EBA7100FEFC7E355",
+    "bytes": 29616
+  },
+  {
+    "source": "C:\\Program Files\\Azure Kinect SDK v1.4.2\\sdk\\windows-desktop\\amd64\\release\\bin\\k4a.dll",
+    "destination": "Assets/Plugins/AzureKinect/x86_64/k4a.dll",
+    "sha256": "F54CAC9C1028C93DA94B606C3DF82EA162DE3798A740F08A4AD48283688932AA",
+    "bytes": 634288
+  },
+  {
+    "source": "C:\\Program Files\\Azure Kinect SDK v1.4.2\\sdk\\windows-desktop\\amd64\\release\\bin\\depthengine_2_0.dll",
+    "destination": "Assets/Plugins/AzureKinect/x86_64/depthengine_2_0.dll",
+    "sha256": "34E514FAB4186218AAF3D2875AF434B610EB8786ACE952B69B10C2B7FE125989",
+    "bytes": 407472
+  },
+  {
+    "source": "C:\\Program Files\\Azure Kinect Body Tracking SDK\\sdk\\windows-desktop\\amd64\\release\\bin\\k4abt.dll",
+    "destination": "Assets/Plugins/AzureKinect/x86_64/k4abt.dll",
+    "sha256": "1BCC26D897861B1A6E05790ABFAAA6F83013C846D7F03365D917C12A59DA1767",
+    "bytes": 4519856
+  },
+  {
+    "source": "C:\\Program Files\\Azure Kinect Body Tracking SDK\\sdk\\windows-desktop\\amd64\\release\\bin\\directml.dll",
+    "destination": "Assets/Plugins/AzureKinect/x86_64/directml.dll",
+    "sha256": "7D97A62D7D002F3F3F9DCDBE2E0E60CA334D1D5DF8E638B8EC4D5AEEED1ECD2B",
+    "bytes": 9487256
+  },
+  {
+    "source": "C:\\Program Files\\Azure Kinect Body Tracking SDK\\sdk\\windows-desktop\\amd64\\release\\bin\\onnxruntime.dll",
+    "destination": "Assets/Plugins/AzureKinect/x86_64/onnxruntime.dll",
+    "sha256": "05DC67FCE5EA67D10D5AB8FCD6347D2A1F64049BDB70D0EEA08BB77BB947AA09",
+    "bytes": 11994544
+  },
+  {
+    "source": "C:\\Program Files\\Azure Kinect Body Tracking SDK\\sdk\\windows-desktop\\amd64\\release\\bin\\onnxruntime_providers_shared.dll",
+    "destination": "Assets/Plugins/AzureKinect/x86_64/onnxruntime_providers_shared.dll",
+    "sha256": "A93654BEA0A7CFFE7ECF6DC84604B962E0F37383D1A8C6F1A5E0D755974A7871",
+    "bytes": 19864
+  },
+  {
+    "source": "C:\\Program Files\\Azure Kinect Body Tracking SDK\\sdk\\windows-desktop\\amd64\\release\\bin\\dnn_model_2_0_op11.onnx",
+    "destination": "Assets/StreamingAssets/AzureKinect/dnn_model_2_0_op11.onnx",
+    "sha256": "40BF149C8E3DC4CBA34CFF4F5C3DB6F5D5D4E6559D525DF1AA02C2E6C80F7D2D",
+    "bytes": 166778023
+  }
+]

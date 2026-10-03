@@ -1,0 +1,6 @@
+{
+  "name": "Naispo.Tests",
+  "references": ["Naispo.Runtime"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"]
+}

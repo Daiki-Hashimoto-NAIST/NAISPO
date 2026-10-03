@@ -1,0 +1,5 @@
+﻿<Solution>
+  <Project Path="Naispo.Runtime.csproj" />
+  <Project Path="Naispo.Tests.csproj" />
+  <Project Path="Unity.2D.Welcome.csproj" />
+</Solution>

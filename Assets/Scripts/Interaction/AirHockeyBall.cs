@@ -1,0 +1,27 @@
+using UnityEngine;
+
+namespace Naispo.Interaction
+{
+    [RequireComponent(typeof(Rigidbody2D),typeof(CircleCollider2D),typeof(SpriteRenderer))]
+    public sealed class AirHockeyBall : MonoBehaviour
+    {
+        public Vector2 initialVelocity=new Vector2(2.2f,1.3f);
+        [Min(0.1f)] public float maximumSpeed=12;
+        [Range(0,1)] public float linearDamping=0.025f;
+        public PhysicsMaterial2D physicsMaterial;
+        public Rigidbody2D Body {get;private set;}
+        void Awake()
+        {
+            Body=GetComponent<Rigidbody2D>();
+            Body.bodyType=RigidbodyType2D.Dynamic;
+            Body.gravityScale=0;Body.linearDamping=linearDamping;
+            Body.collisionDetectionMode=CollisionDetectionMode2D.Continuous;
+            Body.interpolation=RigidbodyInterpolation2D.Interpolate;
+            Body.constraints=RigidbodyConstraints2D.FreezeRotation;
+            GetComponent<CircleCollider2D>().sharedMaterial=physicsMaterial;
+            Body.linearVelocity=initialVelocity;
+        }
+        void FixedUpdate()
+        { if(Body.linearVelocity.sqrMagnitude>maximumSpeed*maximumSpeed)Body.linearVelocity=Body.linearVelocity.normalized*maximumSpeed; }
+    }
+}

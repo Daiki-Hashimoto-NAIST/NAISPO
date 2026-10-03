@@ -1,0 +1,6 @@
+{
+  "name": "Naispo.Runtime",
+  "rootNamespace": "Naispo",
+  "references": [],
+  "autoReferenced": true
+}

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<test-run id="2" testcasecount="15" result="Passed" total="15" passed="15" failed="0" inconclusive="0" skipped="0" asserts="0" engine-version="3.5.0.0" clr-version="4.0.30319.42000" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.1042299">
+  <test-suite type="TestSuite" id="1031" name="Naispo_shadow" fullname="Naispo_shadow" runstate="Runnable" testcasecount="15" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.104230" total="15" passed="15" failed="0" inconclusive="0" skipped="0" asserts="0">
+    <properties>
+      <property name="platform" value="EditMode" />
+    </properties>
+    <test-suite type="Assembly" id="1019" name="Naispo.Tests.dll" fullname="C:/Users/arima/Desktop/NAISPO/Unity/Naispo_shadow/Library/ScriptAssemblies/Naispo.Tests.dll" runstate="Runnable" testcasecount="15" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.095343" total="15" passed="15" failed="0" inconclusive="0" skipped="0" asserts="0">
+      <properties>
+        <property name="_PID" value="24564" />
+        <property name="_APPDOMAIN" value="Unity Child Domain" />
+        <property name="platform" value="EditMode" />
+        <property name="EditorOnly" value="True" />
+      </properties>
+      <test-suite type="TestSuite" id="1020" name="Naispo" fullname="Naispo" runstate="Runnable" testcasecount="15" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.094698" total="15" passed="15" failed="0" inconclusive="0" skipped="0" asserts="0">
+        <properties />
+        <test-suite type="TestSuite" id="1021" name="Tests" fullname="Naispo.Tests" runstate="Runnable" testcasecount="15" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.094378" total="15" passed="15" failed="0" inconclusive="0" skipped="0" asserts="0">
+          <properties />
+          <test-suite type="TestFixture" id="1001" name="PhysicsTests" fullname="Naispo.Tests.PhysicsTests" classname="Naispo.Tests.PhysicsTests" runstate="Runnable" testcasecount="4" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.038822" total="4" passed="4" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1004" name="ChangingOnlyPolygonPathReportsSurfaceMotionGap" fullname="Naispo.Tests.PhysicsTests.ChangingOnlyPolygonPathReportsSurfaceMotionGap" methodname="ChangingOnlyPolygonPathReportsSurfaceMotionGap" classname="Naispo.Tests.PhysicsTests" runstate="Runnable" seed="495672486" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.017689" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[Naispo deformation-only diagnostic: ball x=1.005, vx=0.000
+]]></output>
+            </test-case>
+            <test-case id="1002" name="FastBallBouncesFromWallWithoutTunnelling" fullname="Naispo.Tests.PhysicsTests.FastBallBouncesFromWallWithoutTunnelling" methodname="FastBallBouncesFromWallWithoutTunnelling" classname="Naispo.Tests.PhysicsTests" runstate="Runnable" seed="1665659294" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.001769" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1003" name="MovingKinematicBodyPushesStationaryBall" fullname="Naispo.Tests.PhysicsTests.MovingKinematicBodyPushesStationaryBall" methodname="MovingKinematicBodyPushesStationaryBall" classname="Naispo.Tests.PhysicsTests" runstate="Runnable" seed="1295080903" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.001047" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1005" name="SurfaceMotionEstimatesExpansionAndRejectsStaleOrStaticShapes" fullname="Naispo.Tests.PhysicsTests.SurfaceMotionEstimatesExpansionAndRejectsStaleOrStaticShapes" methodname="SurfaceMotionEstimatesExpansionAndRejectsStaleOrStaticShapes" classname="Naispo.Tests.PhysicsTests" runstate="Runnable" seed="2010124370" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.005000" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+          </test-suite>
+          <test-suite type="TestFixture" id="1006" name="SilhouetteTests" fullname="Naispo.Tests.SilhouetteTests" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" testcasecount="11" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.054367" total="11" passed="11" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-case id="1011" name="ConcavityAndGlobalPointBudgetArePreserved" fullname="Naispo.Tests.SilhouetteTests.ConcavityAndGlobalPointBudgetArePreserved" methodname="ConcavityAndGlobalPointBudgetArePreserved" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" seed="727264657" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.038057" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1010" name="DiagonalComponentsStaySeparate" fullname="Naispo.Tests.SilhouetteTests.DiagonalComponentsStaySeparate" methodname="DiagonalComponentsStaySeparate" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" seed="1918363131" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.000152" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1009" name="DisconnectedBodyPiecesProduceSeparatePaths" fullname="Naispo.Tests.SilhouetteTests.DisconnectedBodyPiecesProduceSeparatePaths" methodname="DisconnectedBodyPiecesProduceSeparatePaths" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" seed="1985812027" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.000206" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1013" name="FourthBodyIsExcludedAndNewIdWaitsForSlotExpiry" fullname="Naispo.Tests.SilhouetteTests.FourthBodyIsExcludedAndNewIdWaitsForSlotExpiry" methodname="FourthBodyIsExcludedAndNewIdWaitsForSlotExpiry" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" seed="622363562" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.000952" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1008" name="HolesAreSolidAndTinyComponentsAreIgnored" fullname="Naispo.Tests.SilhouetteTests.HolesAreSolidAndTinyComponentsAreIgnored" methodname="HolesAreSolidAndTinyComponentsAreIgnored" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" seed="1337712603" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.000199" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1018" name="LatestBufferNeverOverwritesConsumerOrKeepsOldBacklog" fullname="Naispo.Tests.SilhouetteTests.LatestBufferNeverOverwritesConsumerOrKeepsOldBacklog" methodname="LatestBufferNeverOverwritesConsumerOrKeepsOldBacklog" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" seed="303225712" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.000736" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-suite type="ParameterizedMethod" id="1017" name="MapperUsesUniformScaleAndInvertibleMirror" fullname="Naispo.Tests.SilhouetteTests.MapperUsesUniformScaleAndInvertibleMirror" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" testcasecount="3" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.006061" total="3" passed="3" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1014" name="MapperUsesUniformScaleAndInvertibleMirror(1.777778f,True)" fullname="Naispo.Tests.SilhouetteTests.MapperUsesUniformScaleAndInvertibleMirror(1.777778f,True)" methodname="MapperUsesUniformScaleAndInvertibleMirror" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" seed="1896657862" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.002867" asserts="0">
+                <properties>
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1015" name="MapperUsesUniformScaleAndInvertibleMirror(1.0f,False)" fullname="Naispo.Tests.SilhouetteTests.MapperUsesUniformScaleAndInvertibleMirror(1.0f,False)" methodname="MapperUsesUniformScaleAndInvertibleMirror" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" seed="1466165196" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.000153" asserts="0">
+                <properties>
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1016" name="MapperUsesUniformScaleAndInvertibleMirror(0.5625f,True)" fullname="Naispo.Tests.SilhouetteTests.MapperUsesUniformScaleAndInvertibleMirror(0.5625f,True)" methodname="MapperUsesUniformScaleAndInvertibleMirror" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" seed="226564808" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.000119" asserts="0">
+                <properties>
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+            </test-suite>
+            <test-case id="1007" name="RectTouchingImageEdgesHasExactPixelBounds" fullname="Naispo.Tests.SilhouetteTests.RectTouchingImageEdgesHasExactPixelBounds" methodname="RectTouchingImageEdgesHasExactPixelBounds" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" seed="809321764" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.001594" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+            </test-case>
+            <test-case id="1012" name="StableIdsSurviveIndexReorderingAndTimeout" fullname="Naispo.Tests.SilhouetteTests.StableIdsSurviveIndexReorderingAndTimeout" methodname="StableIdsSurviveIndexReorderingAndTimeout" classname="Naispo.Tests.SilhouetteTests" runstate="Runnable" seed="929896643" result="Passed" start-time="2026-10-02 15:53:55Z" end-time="2026-10-02 15:53:55Z" duration="0.001897" asserts="0">
+              <properties>
+                <property name="retryIteration" value="0" />
+                <property name="repeatIteration" value="0" />
+              </properties>
+              <output><![CDATA[Saving results to: C:/Users/arima/AppData/LocalLow/DefaultCompany/Naispo_shadow\TestResults.xml
+]]></output>
+            </test-case>
+          </test-suite>
+        </test-suite>
+      </test-suite>
+    </test-suite>
+  </test-suite>
+</test-run>
