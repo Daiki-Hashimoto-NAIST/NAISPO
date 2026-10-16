@@ -81,6 +81,12 @@ namespace Naispo.Interaction
             float speed = Mathf.Abs(Vector2.Dot(collision.relativeVelocity,transform.up));
             float side = transform.InverseTransformPoint(ball.position).y;
             Kick(speed,side > 0 ? -1 : 1);
+            var gameBall = ball.GetComponent<AirHockeyBall>();
+            if(gameBall != null && gameBall.GravityGame)
+            {
+                Vector2 normal = (Vector2)transform.up * (side >= 0 ? 1 : -1);
+                ball.linearVelocity = LightCoinGame.BoostReflection(ball.linearVelocity,normal,softness);
+            }
         }
         public void ResetSpring() { offset=velocity=0; }
         void OnDestroy()

@@ -10,6 +10,7 @@ namespace Naispo.Interaction
         [Range(0,1)] public float linearDamping=0.025f;
         public PhysicsMaterial2D physicsMaterial;
         public Rigidbody2D Body {get;private set;}
+        public bool GravityGame { get; set; }
         PhysicsMaterial2D runtimeMaterial;
         void Awake()
         {

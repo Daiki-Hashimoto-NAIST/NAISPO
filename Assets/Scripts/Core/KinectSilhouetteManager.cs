@@ -17,6 +17,8 @@ namespace Naispo.Core
         {
             if (GetComponent<Naispo.Interaction.HandWallController>() == null)
                 gameObject.AddComponent<Naispo.Interaction.HandWallController>();
+            if (GetComponent<Naispo.Interaction.LightCoinGame>() == null)
+                gameObject.AddComponent<Naispo.Interaction.LightCoinGame>();
         }
         public BodyColorRegistry Registry { get; } = new BodyColorRegistry();
         public BodyFrameData CurrentFrame => current;
