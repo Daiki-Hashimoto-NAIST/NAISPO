@@ -21,6 +21,16 @@ MonoBehaviour:
   modelFile: AzureKinect/dnn_model_2_0_op11.onnx
   mirrorX: 1
   maximumBodyCount: 3
+  barrierColors:
+  - {r: 1, g: 0.48, b: 0.12, a: 1}
+  - {r: 0.55, g: 1, b: 0.32, a: 1}
+  - {r: 0.65, g: 0.42, b: 1, a: 1}
+  barrierNarrowMeters: 0.3
+  barrierWideMeters: 1.5
+  barrierNarrowBounce: 1
+  barrierWideBounce: 0.4
+  barrierNarrowBend: 0.08
+  barrierWideBend: 0.65
   bodyLostTimeout: 0.75
   staleFrameTimeout: 0.5
   personColors:

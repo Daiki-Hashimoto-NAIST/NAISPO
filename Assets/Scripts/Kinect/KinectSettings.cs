@@ -31,6 +31,15 @@ namespace Naispo.Kinect
         [Range(1, 8)] public int maximumComponentsPerBody = 4;
         [Range(5, 30)] public float colliderUpdateRate = 25;
 
+        [Header("Elastic barrier (independent of body colors)")]
+        public Color[] barrierColors = { new Color(1f,0.48f,0.12f), new Color(0.55f,1f,0.32f), new Color(0.65f,0.42f,1f) };
+        [Min(0.05f)] public float barrierNarrowMeters = 0.3f;
+        [Min(0.1f)] public float barrierWideMeters = 1.5f;
+        [Range(0,1)] public float barrierNarrowBounce = 1f;
+        [Range(0,1)] public float barrierWideBounce = 0.4f;
+        [Min(0.01f)] public float barrierNarrowBend = 0.08f;
+        [Min(0.01f)] public float barrierWideBend = 0.65f;
+
         [Header("Diagnostics")]
         public bool debugLogging = true;
         public bool showDebugOverlay = true;

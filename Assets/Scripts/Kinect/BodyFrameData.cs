@@ -10,6 +10,15 @@ namespace Naispo.Kinect
         public double TimestampSeconds;
         public byte[] BodyIndexMap = Array.Empty<byte>();
         public readonly uint[] BodyIds = new uint[255];
+        public readonly HandPair[] Hands = new HandPair[255];
+
+        // Depth-image pixel centers, already calibrated from the 3D skeleton.
+        public struct HandPair
+        {
+            public System.Numerics.Vector2 Left, Right;
+            public float SeparationMeters;
+            public bool Valid;
+        }
 
         public void EnsureSize(int width, int height)
         {

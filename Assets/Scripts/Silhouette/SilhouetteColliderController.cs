@@ -31,7 +31,7 @@ namespace Naispo.Silhouette
 
         void FixedUpdate()
         {
-            if(manager==null||!manager.IsFresh) {Clear();return;}
+            if(manager==null||manager.useHandWalls||!manager.IsFresh) {Clear();return;}
             double now=Time.fixedUnscaledTimeAsDouble;
             var frame=manager.CurrentFrame;
             bool mappingChanged=lastRevision!=mapper.Revision;

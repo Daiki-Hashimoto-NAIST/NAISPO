@@ -1281,6 +1281,7 @@ MonoBehaviour:
   mapper: {fileID: 1762123859}
   silhouetteRenderer: {fileID: 1274504207}
   colliderController: {fileID: 589060269}
+  useHandWalls: 1
 --- !u!1 &1875615187
 GameObject:
   m_ObjectHideFlags: 0

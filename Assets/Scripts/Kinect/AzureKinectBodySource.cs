@@ -81,6 +81,7 @@ namespace Naispo.Kinect
                 device.StartCameras(new DeviceConfiguration { DepthMode = options.DepthMode, CameraFPS = options.Fps,
                     ColorResolution = ColorResolution.Off, SynchronizedImagesOnly = false, WiredSyncMode = WiredSyncMode.Standalone });
                 camerasStarted = true;
+                var calibration = device.GetCalibration();
                 notices.Enqueue(new Notice("Sensor connected; depth=" + options.DepthMode + ", FPS=" + options.Fps + ", color=OFF", false));
                 if (stopRequested) return;
                 var trackerConfig = TrackerConfiguration.Default;
@@ -137,7 +138,22 @@ namespace Naispo.Kinect
                                 for (int y = 0; y < map.HeightPixels; ++y)
                                     source.Slice(y * map.StrideBytes, map.WidthPixels).CopyTo(producer.BodyIndexMap.AsSpan(y * map.WidthPixels, map.WidthPixels));
                                 producer.BodyCount = Math.Min(255, (int)frame.NumberOfBodies);
-                                for (uint i = 0; i < producer.BodyCount; ++i) producer.BodyIds[i] = frame.GetBodyId(i);
+                                for (uint i = 0; i < producer.BodyCount; ++i)
+                                {
+                                    producer.BodyIds[i] = frame.GetBodyId(i);
+                                    producer.Hands[i] = default;
+                                    var skeleton = frame.GetBodySkeleton(i);
+                                    var left = skeleton.GetJoint(JointId.HandLeft);
+                                    var right = skeleton.GetJoint(JointId.HandRight);
+                                    if (left.ConfidenceLevel < JointConfidenceLevel.Medium ||
+                                        right.ConfidenceLevel < JointConfidenceLevel.Medium ||
+                                        left.Position.Z <= 0 || right.Position.Z <= 0) continue;
+                                    var lp = calibration.TransformTo2D(left.Position, CalibrationDeviceType.Depth, CalibrationDeviceType.Depth);
+                                    var rp = calibration.TransformTo2D(right.Position, CalibrationDeviceType.Depth, CalibrationDeviceType.Depth);
+                                    if (lp.HasValue && rp.HasValue)
+                                        producer.Hands[i] = new BodyFrameData.HandPair { Left = lp.Value, Right = rp.Value,
+                                            SeparationMeters = System.Numerics.Vector3.Distance(left.Position, right.Position) * 0.001f, Valid = true };
+                                }
                                 producer.TimestampSeconds = frame.DeviceTimestamp.TotalSeconds;
                                 producer.Sequence = ++sequence;
                                 detectedBodyCount = producer.BodyCount;

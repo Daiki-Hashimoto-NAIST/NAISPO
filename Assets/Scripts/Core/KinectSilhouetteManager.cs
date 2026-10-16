@@ -12,6 +12,12 @@ namespace Naispo.Core
         public KinectViewportMapper mapper;
         public SilhouetteRenderer silhouetteRenderer;
         public SilhouetteColliderController colliderController;
+        public bool useHandWalls = true;
+        void Awake()
+        {
+            if (GetComponent<Naispo.Interaction.HandWallController>() == null)
+                gameObject.AddComponent<Naispo.Interaction.HandWallController>();
+        }
         public BodyColorRegistry Registry { get; } = new BodyColorRegistry();
         public BodyFrameData CurrentFrame => current;
         public bool IsFresh => hasFrame && !source.HasFailed && Time.unscaledTimeAsDouble - lastFrameTime <= settings.staleFrameTimeout;
@@ -47,6 +53,8 @@ namespace Naispo.Core
         }
         void OnGUI()
         {
+            if (GUI.Button(new Rect(12,145,270,36), useHandWalls ? "Mode: Hand walls (click to switch)" : "Mode: Body silhouette (click to switch)"))
+                useHandWalls = !useHandWalls;
             if (settings == null || !settings.showDebugOverlay) return;
             GUI.Box(new Rect(12,12,540,125), GUIContent.none);
             GUI.Label(new Rect(24,20,515,115), summary);
