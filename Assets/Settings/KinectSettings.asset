@@ -21,6 +21,10 @@ MonoBehaviour:
   modelFile: AzureKinect/dnn_model_2_0_op11.onnx
   mirrorX: 1
   maximumBodyCount: 3
+  captureColor: 1
+  ballLightShader: {fileID: 4800000, guid: a61d3d498478456094c2077d09c3b2e1, type: 3}
+  ballLightRadius: 1.8
+  shadowBrightness: 0.14
   barrierColors:
   - {r: 1, g: 0.48, b: 0.12, a: 1}
   - {r: 0.55, g: 1, b: 0.32, a: 1}

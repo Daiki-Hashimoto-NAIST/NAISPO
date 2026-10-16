@@ -12,6 +12,9 @@ namespace Naispo.Silhouette
         public Material silhouetteMaterial;
         public Texture2D Texture => texture;
         Texture2D texture;
+        Texture2D colorTexture;
+        Transform lightBall;
+        public bool LightEnabled = true;
         Mesh mesh;
         Material material;
         Color32[] pixels;
@@ -30,10 +33,26 @@ namespace Naispo.Silhouette
             mesh.triangles = new[] { 0,1,2,0,2,3 };
             GetComponent<MeshFilter>().sharedMesh = mesh;
             material = new Material(silhouetteMaterial);
+            if(settings != null && settings.ballLightShader != null) material.shader = settings.ballLightShader;
             view = GetComponent<MeshRenderer>();
             view.sharedMaterial = material;
             view.sortingOrder = 0;
             view.enabled = false;
+        }
+
+        void Start()
+        {
+            var ball = FindFirstObjectByType<Naispo.Interaction.AirHockeyBall>();
+            if(ball != null) lightBall = ball.transform;
+            if(mapper.targetCamera != null) mapper.targetCamera.backgroundColor = new Color(0.004f,0.006f,0.012f);
+        }
+        void LateUpdate()
+        {
+            if(material == null || settings.ballLightShader == null) return;
+            material.SetFloat("_LightEnabled",LightEnabled && lightBall != null ? 1 : 0);
+            material.SetFloat("_Radius",settings.ballLightRadius);
+            material.SetFloat("_ShadowBrightness",settings.shadowBrightness);
+            if(lightBall != null) material.SetVector("_LightPosition",lightBall.position);
         }
 
         public void Apply(BodyFrameData frame, BodyColorRegistry registry)
@@ -46,6 +65,9 @@ namespace Naispo.Silhouette
                 texture = new Texture2D(frame.Width, frame.Height, TextureFormat.RGBA32, false) { name = "Body ID Silhouettes", wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Point };
                 pixels = new Color32[frame.Width * frame.Height];
                 material.mainTexture = texture;
+                if(colorTexture != null) Destroy(colorTexture);
+                colorTexture = new Texture2D(frame.Width,frame.Height,TextureFormat.BGRA32,false) { name="Depth-aligned RGB",wrapMode=TextureWrapMode.Clamp,filterMode=FilterMode.Bilinear };
+                if(settings.ballLightShader != null) material.SetTexture("_ColorTex",colorTexture);
             }
             for (int i = 0; i < indexColors.Length; i++)
             {
@@ -56,6 +78,12 @@ namespace Naispo.Silhouette
             for (int i = 0; i < pixels.Length; i++) pixels[i] = indexColors[frame.BodyIndexMap[i]];
             texture.SetPixels32(pixels);
             texture.Apply(false, false);
+            if(frame.HasColor)
+            {
+                colorTexture.LoadRawTextureData(frame.AlignedColorBgra);
+                colorTexture.Apply(false,false);
+            }
+            if(settings.ballLightShader != null) material.SetFloat("_HasColor",frame.HasColor ? 1 : 0);
             view.enabled = true;
             RefreshGeometry();
         }
@@ -74,13 +102,14 @@ namespace Naispo.Silhouette
             Vector2 world = mapper.PixelToWorld(new Vector2(x,y));
             vertices[i] = transform.InverseTransformPoint(new Vector3(world.x, world.y, mapper.silhouettePlaneZ));
         }
-        public void Clear() { if (view != null) view.enabled = false; }
+        public void Clear() { if (view != null) view.enabled = false; if(material != null && settings.ballLightShader != null)material.SetFloat("_HasColor",0); }
         void OnDisable() => Clear();
         void OnDestroy()
         {
             if (mesh != null) Destroy(mesh);
             if (material != null) Destroy(material);
             if (texture != null) Destroy(texture);
+            if (colorTexture != null) Destroy(colorTexture);
         }
     }
 }

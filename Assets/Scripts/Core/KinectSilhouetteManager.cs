@@ -55,6 +55,8 @@ namespace Naispo.Core
         {
             if (GUI.Button(new Rect(12,145,270,36), useHandWalls ? "Mode: Hand walls (click to switch)" : "Mode: Body silhouette (click to switch)"))
                 useHandWalls = !useHandWalls;
+            if(GUI.Button(new Rect(12,185,270,32),silhouetteRenderer.LightEnabled ? "Ball light: ON" : "Ball light: OFF"))
+                silhouetteRenderer.LightEnabled = !silhouetteRenderer.LightEnabled;
             if (settings == null || !settings.showDebugOverlay) return;
             GUI.Box(new Rect(12,12,540,125), GUIContent.none);
             GUI.Label(new Rect(24,20,515,115), summary);

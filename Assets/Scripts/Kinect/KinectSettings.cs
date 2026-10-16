@@ -15,6 +15,12 @@ namespace Naispo.Kinect
         public bool allowCpuFallback = true;
         [Range(0, 1)] public float skeletonSmoothing = 0.2f;
         public string modelFile = "AzureKinect/dnn_model_2_0_op11.onnx";
+        public bool captureColor = true;
+
+        [Header("Ball light")]
+        public Shader ballLightShader;
+        [Min(0.2f)] public float ballLightRadius = 1.8f;
+        [Range(0,1)] public float shadowBrightness = 0.14f;
 
         [Header("Display and identities")]
         public bool mirrorX = true;

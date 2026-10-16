@@ -66,6 +66,9 @@ namespace Naispo.Kinect
         {
             Device device = null;
             Tracker tracker = null;
+            Transformation colorTransform = null;
+            Microsoft.Azure.Kinect.Sensor.Image alignedColor = null;
+            long colorFrames = 0;
             bool camerasStarted = false;
             try
             {
@@ -79,10 +82,18 @@ namespace Naispo.Kinect
                     throw new InvalidOperationException("Kinect is not connected. Check power/USB 3 and close other Kinect viewers, then re-enable KinectSystem.");
                 device = Device.Open(options.DeviceIndex);
                 device.StartCameras(new DeviceConfiguration { DepthMode = options.DepthMode, CameraFPS = options.Fps,
-                    ColorResolution = ColorResolution.Off, SynchronizedImagesOnly = false, WiredSyncMode = WiredSyncMode.Standalone });
+                    ColorResolution = options.Color ? ColorResolution.R720p : ColorResolution.Off,
+                    ColorFormat = ImageFormat.ColorBGRA32,
+                    SynchronizedImagesOnly = options.Color, WiredSyncMode = WiredSyncMode.Standalone });
                 camerasStarted = true;
                 var calibration = device.GetCalibration();
-                notices.Enqueue(new Notice("Sensor connected; depth=" + options.DepthMode + ", FPS=" + options.Fps + ", color=OFF", false));
+                if(options.Color)
+                {
+                    colorTransform = new Transformation(calibration);
+                    alignedColor = new Microsoft.Azure.Kinect.Sensor.Image(ImageFormat.ColorBGRA32,
+                        calibration.DepthCameraCalibration.ResolutionWidth,calibration.DepthCameraCalibration.ResolutionHeight);
+                }
+                notices.Enqueue(new Notice("Sensor connected; depth=" + options.DepthMode + ", FPS=" + options.Fps + ", color=" + (options.Color ? "720p BGRA / depth-aligned" : "OFF"), false));
                 if (stopRequested) return;
                 var trackerConfig = TrackerConfiguration.Default;
                 trackerConfig.SensorOrientation = SensorOrientation.Default;
@@ -156,6 +167,25 @@ namespace Naispo.Kinect
                                 }
                                 producer.TimestampSeconds = frame.DeviceTimestamp.TotalSeconds;
                                 producer.Sequence = ++sequence;
+                                producer.HasColor = false;
+                                if(options.Color)
+                                {
+                                    // Use the capture associated with THIS tracker result, not a newer image.
+                                    using(var matchedCapture = frame.Capture)
+                                    using(var color = matchedCapture.Color)
+                                    using(var depth = matchedCapture.Depth)
+                                    {
+                                        if(color != null && depth != null)
+                                        {
+                                            colorTransform.ColorImageToDepthCamera(depth,color,alignedColor);
+                                            var bgra = alignedColor.Memory.Span;
+                                            for(int y=0;y<map.HeightPixels;y++)
+                                                bgra.Slice(y*alignedColor.StrideBytes,map.WidthPixels*4).CopyTo(producer.AlignedColorBgra.AsSpan(y*map.WidthPixels*4,map.WidthPixels*4));
+                                            producer.HasColor = true;
+                                            if(++colorFrames == 1) notices.Enqueue(new Notice("Tracker ready: " + activeProcessingMode + "; aligned RGB ready " + map.WidthPixels + "x" + map.HeightPixels,false));
+                                        }
+                                    }
+                                }
                                 detectedBodyCount = producer.BodyCount;
                                 mapWidth = producer.Width;
                                 mapHeight = producer.Height;
@@ -181,6 +211,8 @@ namespace Naispo.Kinect
             finally
             {
                 lock (trackerGate) { liveTracker = null; }
+                try { alignedColor?.Dispose(); colorTransform?.Dispose(); }
+                catch(Exception ex) { notices.Enqueue(new Notice("Color cleanup: " + ex.Message,true)); }
                 try { if (tracker != null) { tracker.Shutdown(); tracker.Dispose(); } }
                 catch (Exception ex) { notices.Enqueue(new Notice("Tracker cleanup: " + ex.Message, true)); }
                 try { if (device != null) { if (camerasStarted) device.StopCameras(); device.Dispose(); } }
@@ -214,7 +246,7 @@ namespace Naispo.Kinect
         sealed class CaptureOptions
         {
             public readonly string DataPath, ModelPath;
-            public readonly bool Editor, CpuFallback;
+            public readonly bool Editor, CpuFallback, Color;
             public readonly int DeviceIndex;
             public readonly DepthMode DepthMode;
             public readonly FPS Fps;
@@ -224,6 +256,7 @@ namespace Naispo.Kinect
             {
                 DataPath = data; ModelPath = Path.IsPathRooted(s.modelFile) ? s.modelFile : Path.Combine(streaming, s.modelFile);
                 Editor = editor; CpuFallback = s.allowCpuFallback; DeviceIndex = s.deviceIndex;
+                Color = s.captureColor;
                 DepthMode = s.depthMode; Fps = s.cameraFPS; Mode = s.processingMode; Smoothing = s.skeletonSmoothing;
             }
         }

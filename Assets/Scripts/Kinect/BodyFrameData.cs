@@ -9,6 +9,8 @@ namespace Naispo.Kinect
         public long Sequence;
         public double TimestampSeconds;
         public byte[] BodyIndexMap = Array.Empty<byte>();
+        public byte[] AlignedColorBgra = Array.Empty<byte>();
+        public bool HasColor;
         public readonly uint[] BodyIds = new uint[255];
         public readonly HandPair[] Hands = new HandPair[255];
 
@@ -26,6 +28,8 @@ namespace Naispo.Kinect
             Width = width;
             Height = height;
             BodyIndexMap = new byte[checked(width * height)];
+            AlignedColorBgra = new byte[checked(width * height * 4)];
+            HasColor = false;
         }
     }
 
