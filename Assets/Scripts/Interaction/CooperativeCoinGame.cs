@@ -133,7 +133,7 @@ namespace Naispo.Interaction
             ball.Body.gravityScale=0.55f;
             ball.Body.linearDamping=0.015f;
             ball.maximumSpeed=ballSpeed*MaximumBallSpeedFactor;
-            BuildArtwork(); BuildArena(); BuildCoins(); BuildBallLight(); BuildVersusArtwork();
+            BuildArtwork(); BuildArena(); BuildGardenPresentation(); BuildCoins(); BuildBallLight(); BuildVersusArtwork();
             configured=true;
             RefreshNet(); PlaceCoins(); BeginServe(1.4f);
         }
@@ -395,6 +395,8 @@ namespace Naispo.Interaction
 
         void RefreshLighting()
         {
+            ballLight.color=IsVersus ? new Color(1,.84f,.50f,.17f) : new Color(1,.87f,.60f,.065f);
+            ballCorona.color=IsVersus ? new Color(1,.89f,.58f,.85f) : new Color(1,.93f,.72f,.68f);
             ballLight.transform.position=ball.transform.position;
             ballLight.transform.localScale=Vector3.one*(ballLightRadius*2);
             ballCorona.transform.position=ball.transform.position;
@@ -475,7 +477,7 @@ namespace Naispo.Interaction
         void EnsureStyles()
         {
             if(titleStyle != null) return;
-            titleStyle=new GUIStyle(GUI.skin.label) { font=GuiFont,fontSize=25,fontStyle=FontStyle.Bold,normal={textColor=new Color(.95f,.97f,1)} };
+            titleStyle=new GUIStyle(GUI.skin.label) { font=GuiFont,fontSize=25,fontStyle=FontStyle.Normal,normal={textColor=new Color(.95f,.95f,.86f)} };
             bodyStyle=new GUIStyle(titleStyle) { fontSize=17,fontStyle=FontStyle.Normal };
             smallStyle=new GUIStyle(bodyStyle) { fontSize=13,normal={textColor=new Color(.65f,.72f,.83f)} };
             scoreStyle=new GUIStyle(titleStyle) { fontSize=52,alignment=TextAnchor.MiddleLeft,padding=new RectOffset(0,0,0,0),normal={textColor=new Color(1,.95f,.78f)} };
@@ -489,10 +491,11 @@ namespace Naispo.Interaction
             pointStyle=new GUIStyle(centeredStyle) { fontSize=21 };
             effectStyle=new GUIStyle(matchHintStyle) { fontSize=15,normal={textColor=new Color(.88f,.74f,1)} };
             winStyle=new GUIStyle(centeredStyle) { fontSize=36 };
-            buttonStyle=new GUIStyle(GUI.skin.button) { font=GuiFont,fontSize=15,fontStyle=FontStyle.Bold };
             panelTexture=new Texture2D(1,1); panelTexture.SetPixel(0,0,new Color(.055f,.076f,.14f,.97f)); panelTexture.Apply();
+            BuildControlStyles();
         }
-        static Color PlayerColor(int side) => side<0 ? new Color(.36f,.91f,.96f) : new Color(1,.57f,.51f);
+        Color PlayerColor(int side) => IsVersus ? (side<0 ? new Color(.36f,.91f,.96f) : new Color(1,.57f,.51f))
+            : (side<0 ? new Color(.64f,.94f,.80f) : new Color(.94f,.76f,.49f));
 
         void DrawCollectionHud()
         {
@@ -504,9 +507,8 @@ namespace Naispo.Interaction
             float goalWidth=goalStyle.CalcSize(new GUIContent(goal)).x+12;
             float rowHeight=Mathf.Max(64,countSize.y+8);
             float cardHeight=rowHeight+40;
-            var card=new Rect(486,18,308,cardHeight);
+            var card=new Rect(486,32,308,cardHeight);
             GUI.BeginGroup(card);
-            GUI.DrawTexture(new Rect(0,0,card.width,cardHeight),panelTexture);
             float start=(card.width-(32+12+countWidth+8+goalWidth))*.5f;
             GUI.DrawTexture(new Rect(start,10+(rowHeight-32)*.5f,32,32),coinTexture);
             GUI.Label(new Rect(start+44,10,countWidth,rowHeight),count,collectionCountStyle);
@@ -514,8 +516,8 @@ namespace Naispo.Interaction
             for(int i=0;i<CoinsPerRound;i++)
             {
                 Color old=GUI.color;
-                GUI.color=i<CollectedCount ? Color.white : new Color(.36f,.39f,.48f,.6f);
-                GUI.DrawTexture(new Rect(50+i*24,rowHeight+16,16,16),coinTexture);
+                GUI.color=i<CollectedCount ? new Color(1,.91f,.64f) : new Color(.32f,.43f,.35f,.7f);
+                GUI.DrawTexture(new Rect(93+i*14,rowHeight+12,10,10),haloTexture);
                 GUI.color=old;
             }
             GUI.EndGroup();
@@ -585,7 +587,6 @@ namespace Naispo.Interaction
             Vector3 screen=cameraView.WorldToScreenPoint(ball.transform.position);
             Vector2 point=(new Vector2(screen.x,Screen.height-screen.y)-offset)/scale;
             float progress=1-Mathf.Clamp01(serveRemaining/Mathf.Max(.01f,serveDuration));
-            Fill(new Rect(point.x-33,point.y+27,66,22),new Color(.055f,.076f,.14f,.92f));
             for(int i=0;i<3;i++)
             {
                 Color color=PlayerColor(servingSide);
@@ -633,19 +634,16 @@ namespace Naispo.Interaction
             GUI.matrix=Matrix4x4.TRS(offset,Quaternion.identity,new Vector3(scale,scale,1));
             if(IsVersus) DrawVersusHud();
             else DrawCollectionHud();
-            if(GUI.Button(new Rect(1063,19,83,35),paused ? "再開" : "一時停止",buttonStyle)) SetPaused(!paused);
-            if(GUI.Button(new Rect(1155,19,94,35),"設定",buttonStyle)) { settingsOpen=!settingsOpen; ApplySimulationState(); }
-            if(GUI.Button(new Rect(1063,65,186,29),IsVersus && versus.Complete ? "もう一度" : "はじめから",buttonStyle)) RestartGame();
+            DrawBottomControls();
 
             if(settingsOpen) DrawSettings();
             else if(!inputReady) DrawMessage(InputWaitTitle,InputWaitDetail,new Color(.44f,.83f,.92f));
-            else if(paused)
+            else if(paused) DrawPauseMenu();
+            else if(IsVersus && versus.Complete)
             {
-                GUI.DrawTexture(new Rect(600,316,80,88),panelTexture);
-                Fill(new Rect(621,340,12,40),new Color(.76f,.82f,.95f));
-                Fill(new Rect(647,340,12,40),new Color(.76f,.82f,.95f));
+                DrawVictory();
+                if(GUI.Button(new Rect(1050,42,186,40),"もう一度",buttonStyle))RestartGame();
             }
-            else if(IsVersus && versus.Complete) DrawVictory();
             else if(clearRemaining>=0) DrawRoundClear();
             else if(serveRemaining>=0) DrawServeCue(scale,offset);
             GUI.matrix=matrix;
@@ -660,25 +658,25 @@ namespace Naispo.Interaction
         }
         void DrawSettings()
         {
-            Fill(new Rect(0,110,1280,510),new Color(.015f,.025f,.06f,.72f));
-            GUI.DrawTexture(new Rect(380,100,520,504),panelTexture);
-            GUI.Label(new Rect(414,120,420,40),"遊びやすさを調整",titleStyle);
+            Fill(new Rect(0,0,1280,720),new Color(.015f,.035f,.025f,.82f));
+            GUI.DrawTexture(new Rect(380,64,520,584),panelTexture);
+            GUI.Label(new Rect(414,82,420,40),"設定",titleStyle);
             GUI.enabled=Mode!=RallyMode.StarCollection;
-            if(GUI.Button(new Rect(414,168,216,36),"星あつめ",buttonStyle)) SetMode(RallyMode.StarCollection);
+            if(GUI.Button(new Rect(414,136,216,40),"星あつめ",buttonStyle)) { SetMode(RallyMode.StarCollection);settingsOpen=true;ApplySimulationState(); }
             GUI.enabled=Mode!=RallyMode.Versus;
-            if(GUI.Button(new Rect(646,168,216,36),"対戦 · 3点先取",buttonStyle)) SetMode(RallyMode.Versus);
+            if(GUI.Button(new Rect(646,136,216,40),"対戦 · 3点先取",buttonStyle)) { SetMode(RallyMode.Versus);settingsOpen=true;ApplySimulationState(); }
             GUI.enabled=true;
-            GUI.Label(new Rect(414,208,452,25),"モードを切り替えると、新しいゲームが始まります",smallStyle);
-            GUI.Label(new Rect(414,239,420,30),$"ネットの高さ   {NetHeight:F1}",bodyStyle);
-            NetHeight=GUI.HorizontalSlider(new Rect(418,282,438,22),NetHeight,1f,3.1f);
-            GUI.Label(new Rect(414,307,440,25),"低いほど、ふたりでラリーをつなげやすい",smallStyle);
-            GUI.Label(new Rect(414,355,420,30),$"ボールの速さ   {BallSpeed:F1}",bodyStyle);
-            BallSpeed=GUI.HorizontalSlider(new Rect(418,398,438,22),BallSpeed,6.5f,10.5f);
-            GUI.Label(new Rect(414,423,440,25),"手の幅を狭めると強く、傾けると左右へ",smallStyle);
-            GUI.Label(new Rect(414,466,270,28),"ボールの光",bodyStyle);
-            if(GUI.Button(new Rect(746,461,120,34),BallLightEnabled ? "ON" : "OFF",buttonStyle)) BallLightEnabled=!BallLightEnabled;
-            GUI.Label(new Rect(414,500,452,25),IsVersus ? "紫のアイテム：相手の次の返球を25％弱くする" : "光が届く範囲だけ、星が見えて取れます",smallStyle);
-            if(GUI.Button(new Rect(414,544,452,36),"ゲームに戻る",buttonStyle)) { settingsOpen=false; ApplySimulationState(); }
+            GUI.Label(new Rect(414,204,420,30),$"ネットの高さ   {NetHeight:F1}",bodyStyle);
+            NetHeight=GUI.HorizontalSlider(new Rect(418,248,438,22),NetHeight,1f,3.1f,sliderStyle,sliderThumbStyle);
+            GUI.Label(new Rect(414,285,420,30),$"ボールの速さ   {BallSpeed:F1}",bodyStyle);
+            BallSpeed=GUI.HorizontalSlider(new Rect(418,329,438,22),BallSpeed,6.5f,10.5f,sliderStyle,sliderThumbStyle);
+            GUI.Label(new Rect(414,370,270,28),"ボールの光",bodyStyle);
+            if(GUI.Button(new Rect(746,365,120,34),BallLightEnabled ? "ON" : "OFF",buttonStyle)) BallLightEnabled=!BallLightEnabled;
+            Fill(new Rect(414,426,452,1),new Color(.32f,.43f,.35f,.5f));
+            var app=GetComponent<CooperativeRallyApp>();
+            if(app!=null)app.DrawInputControls(new Rect(414,446,452,100));
+            if(GUI.Button(new Rect(414,584,216,38),"はじめから",quietButtonStyle)) { RestartGame();settingsOpen=false;ApplySimulationState(); }
+            if(GUI.Button(new Rect(646,584,216,38),"戻る",buttonStyle)) { settingsOpen=false; ApplySimulationState(); }
         }
 
         void OnEnable() { if(configured) ApplySimulationState(); }
@@ -693,6 +691,7 @@ namespace Naispo.Interaction
             if(ball != null) ball.CancelBarrierImpact();
             if(ball != null && ball.CooperativeGame==this) ball.CooperativeGame=null;
             CleanupVersusArtwork();
+            CleanupGardenPresentation();
             Release(arenaRoot); Release(coinSprite); Release(whiteSprite); Release(haloSprite); Release(lightSprite);
             Release(coinTexture); Release(whiteTexture); Release(haloTexture); Release(lightTexture); Release(panelTexture);
             Release(wallMaterial);

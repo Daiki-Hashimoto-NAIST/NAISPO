@@ -12,6 +12,8 @@ namespace Naispo.Interaction
         public float thickness = 0.16f;
         public int PlayerSide { get; set; }
         readonly Color[] baseColors = new Color[3];
+        bool presentationSet, gardenPresentation;
+        Color presentationColor;
         bool softened;
         public bool Softened
         {
@@ -48,6 +50,23 @@ namespace Naispo.Interaction
         public bool AcquiringHands => stabilizeTracking&&stabilized[0].Acquiring;
         public EdgeCollider2D Wall(int slot) => walls[slot];
 
+        public void SetPresentation(Color color,bool garden)
+        {
+            presentationSet=true; presentationColor=color; gardenPresentation=garden;
+            for(int i=0;i<walls.Length;i++)
+            {
+                if(walls[i]==null)continue;
+                baseColors[i]=color;
+                textures[i].SetPixel(0,0,softened ? new Color(.74f,.46f,1) : color);
+                textures[i].Apply();
+                lines[i].numCapVertices=garden ? 8 : 2;
+                lines[i].numCornerVertices=4;
+                var glow=walls[i].GetComponent<RallyBarrierGlow>();
+                if(glow==null&&garden)glow=walls[i].gameObject.AddComponent<RallyBarrierGlow>();
+                if(glow!=null)glow.Configure(lines[i],garden);
+            }
+        }
+
         void Start()
         {
             manager = GetComponent<KinectSilhouetteManager>();
@@ -83,6 +102,7 @@ namespace Naispo.Interaction
                 barriers[i].PlayerSide=PlayerSide;
                 barriers[i].Initialize(walls[i], lines[i]);
             }
+            if(presentationSet)SetPresentation(presentationColor,gardenPresentation);
         }
 
         void FixedUpdate()
@@ -167,7 +187,7 @@ namespace Naispo.Interaction
             owners[slot]=owner;active[slot]=true;
             barriers[slot].SetSpan(delta.magnitude,meters,thickness,reset);
             walls[slot].enabled=true;
-            lines[slot].startWidth=lines[slot].endWidth=thickness;
+            lines[slot].startWidth=lines[slot].endWidth=thickness*(gardenPresentation ? .55f : 1);
             lines[slot].enabled=true;
         }
         void Hide(int i)

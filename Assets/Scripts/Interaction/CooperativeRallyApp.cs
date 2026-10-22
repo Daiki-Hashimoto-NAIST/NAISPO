@@ -30,7 +30,12 @@ namespace Naispo.Interaction
         float minimumDistance,maximumDistance;
         Vector2 diagnosticScroll;
         string copyStatus="";
-        GUIStyle label,small,button,field,title;
+        GUIStyle label,small,button,selectedButton,field,title,statusLabel;
+        GUISkin cameraSkin;
+        Texture2D idleTexture,hoverTexture,pressedTexture,selectedTexture,fieldTexture,trackTexture;
+        bool paletteInitialized,versusPalette;
+        static readonly Color GardenBackground=new Color(.025f,.075f,.055f);
+        static readonly Color VersusBackground=new Color(.018f,.028f,.065f);
 
         void Awake()
         {
@@ -39,7 +44,7 @@ namespace Naispo.Interaction
             if(gameCamera==null)gameCamera=Camera.main;
             gameCamera.orthographic=true;gameCamera.orthographicSize=5;
             FitCamera();
-            gameCamera.backgroundColor=new Color(.018f,.028f,.065f);
+            gameCamera.backgroundColor=GardenBackground;
             sensorSettings=Instantiate(sensorTemplate);
             sensorSettings.showStatus=false;
             var defaults=sensorSettings.serialNumbers;
@@ -68,10 +73,10 @@ namespace Naispo.Interaction
 
         void BuildPlayer(int slot)
         {
-            var color=slot==0?new Color(.25f,.88f,.94f):new Color(1,.50f,.46f);
+            var color=PlayerColor(slot,false);
             var settings=Instantiate(template);playerSettings[slot]=settings;
             settings.maximumBodyCount=1;settings.showDebugOverlay=false;settings.debugLogging=false;
-            settings.personColors=new[]{new Color(color.r*.40f,color.g*.40f,color.b*.40f,1),color,color};
+            settings.personColors=new[]{new Color(color.r*.25f,color.g*.25f,color.b*.25f,1),color,color};
             // The shared court owns one ball light across both player viewports.
             settings.barrierColors=new[]{color,color,color};settings.ballLightShader=null;
             // Demo coordinates are screen-space; physical inputs retain the mirror convention.
@@ -111,6 +116,7 @@ namespace Naispo.Interaction
         {
             if(Game==null)return;
             FitCamera();
+            ApplyPlayerPalette();
             bool ready=!SensorMode||BothPlayersReady;
             Game.ExternalOverlayOpen=SensorSettingsOpen;
             Game.SetInputReady(ready&&!SensorSettingsOpen);
@@ -134,7 +140,31 @@ namespace Naispo.Interaction
                 demos[i].acceptControls=Application.isFocused&&!SensorSettingsOpen&&!Game.SettingsOpen&&!Game.IsPaused;
                 handWalls[i].Softened=Game.IsVersus&&Game.VersusState.SoftenedSide==(i==0 ? -1 : 1);
             }
-            gameCamera.backgroundColor=new Color(.018f,.028f,.065f);
+            gameCamera.backgroundColor=Game.IsVersus ? VersusBackground : GardenBackground;
+        }
+
+        static Color PlayerColor(int slot,bool versus)
+        {
+            if(versus)return slot==0 ? new Color(.25f,.88f,.94f) : new Color(1,.50f,.46f);
+            return slot==0 ? new Color(.64f,.94f,.80f) : new Color(.94f,.76f,.49f);
+        }
+
+        void ApplyPlayerPalette()
+        {
+            bool versus=Game.IsVersus;
+            if(paletteInitialized&&versusPalette==versus)return;
+            paletteInitialized=true;versusPalette=versus;
+            for(int slot=0;slot<playerSettings.Length;slot++)
+            {
+                var color=PlayerColor(slot,versus);
+                var settings=playerSettings[slot];
+                float silhouetteBrightness=versus ? .40f : .25f;
+                // Reuse the three-slot palettes created with each player.
+                for(int index=0;index<settings.barrierColors.Length;index++)settings.barrierColors[index]=color;
+                for(int index=0;index<settings.personColors.Length;index++)
+                    settings.personColors[index]=index==0 ? new Color(color.r*silhouetteBrightness,color.g*silhouetteBrightness,color.b*silhouetteBrightness,1) : color;
+                handWalls[slot].SetPresentation(color,!versus);
+            }
         }
 
         // Hand walls run at -600, then this -500 gate runs before ball physics.
@@ -249,42 +279,73 @@ namespace Naispo.Interaction
             float scale=Mathf.Min(Screen.width/1280f,Screen.height/720f);
             var offset=new Vector2((Screen.width-1280*scale)*.5f,(Screen.height-720*scale)*.5f);
             GUI.matrix=Matrix4x4.TRS(offset,Quaternion.identity,new Vector3(scale,scale,1));
-            GUI.enabled=!Game.SettingsOpen&&!SensorSettingsOpen;
-            Fill(new Rect(0,620,1280,100),new Color(.035f,.053f,.095f,.98f));
-            if(GUI.Button(new Rect(24,638,124,38),"DEMO",button))UseDemo();
-            if(GUI.Button(new Rect(160,638,124,38),"KINECT",button))UseSensors();
-            if(GUI.Button(new Rect(296,638,100,38),"カメラ",button))SensorSettingsOpen=true;
-            GUI.enabled=true;
-            Fill(new Rect(SensorMode?160:24,680,124,3),new Color(.25f,.88f,.94f,.8f));
-            if(SensorMode)
+            if(SensorMode&&!Game.SettingsOpen&&!SensorSettingsOpen)
             {
-                DrawPlayerStatus(0,506);
-                DrawPlayerStatus(1,888);
-            }
-            else if(Game.IsPaused||Game.SettingsOpen)
-            {
-                GUI.Label(new Rect(506,632,355,30),"L  WASD 移動 · Q E 傾き",label);
-                GUI.Label(new Rect(888,632,370,30),"R  ↑↓←→ 移動 · J L 傾き",label);
-                GUI.Label(new Rect(506,666,355,28),"Z X 手幅 · マウス 移動",small);
-                GUI.Label(new Rect(888,666,370,28),"U O 手幅 · マウス 移動",small);
+                DrawPlayerStatus(0,new Rect(458,687,174,24));
+                DrawPlayerStatus(1,new Rect(662,687,174,24));
             }
             if(SensorSettingsOpen)DrawSettings();
             Game.ExternalOverlayOpen=SensorSettingsOpen;
             GUI.matrix=saved;
         }
 
-        void DrawPlayerStatus(int slot,float x)
+        // Called from the game settings in its existing 1280 x 720 GUI space.
+        public void DrawInputControls(Rect area)
         {
-            var color=slot==0?new Color(.25f,.88f,.94f):new Color(1,.50f,.46f);
+            EnsureStyles();
+            bool wasEnabled=GUI.enabled;
+            GUI.enabled=wasEnabled&&!SensorSettingsOpen;
+            float width=(area.width-16)/3;
+            var demoRect=new Rect(area.x,area.y,width,36);
+            var sensorRect=new Rect(area.x+width+8,area.y,width,36);
+            var cameraRect=new Rect(area.x+2*(width+8),area.y,width,36);
+            if(GUI.Button(demoRect,"DEMO",SensorMode ? button : selectedButton)&&SensorMode)UseDemo();
+            if(GUI.Button(sensorRect,"KINECT",SensorMode ? selectedButton : button)&&!SensorMode)UseSensors();
+            if(GUI.Button(cameraRect,"カメラ",button))OpenCameraSettings();
+            if(area.height>=90)
+            {
+                if(SensorMode)
+                {
+                    DrawPlayerStatus(0,new Rect(area.x,area.y+48,area.width*.5f-8,26));
+                    DrawPlayerStatus(1,new Rect(area.center.x+8,area.y+48,area.width*.5f-8,26));
+                }
+                else
+                {
+                    GUI.Label(new Rect(area.x,area.y+48,area.width,22),"L   WASD 移動   ·   Q E 傾き   ·   Z X 手幅",small);
+                    GUI.Label(new Rect(area.x,area.y+72,area.width,22),"R   ↑↓←→ 移動   ·   J L 傾き   ·   U O 手幅",small);
+                }
+            }
+            GUI.enabled=wasEnabled;
+        }
+
+        public void OpenCameraSettings()
+        {
+            SensorSettingsOpen=true;
+            if(Game!=null)
+            {
+                Game.ExternalOverlayOpen=true;
+                Game.SetInputReady(false);
+            }
+        }
+
+        void DrawPlayerStatus(int slot,Rect area)
+        {
+            var color=PlayerColor(slot,Game.IsVersus);
             if(!Ready(slot))color.a=.4f;
-            Fill(new Rect(x,646,4,22),color);
-            GUI.Label(new Rect(x+18,640,338,34),(slot==0?"L   ":"R   ")+FooterStatus(slot),label);
+            Fill(new Rect(area.x,area.center.y-2,4,4),color);
+            GUI.Label(new Rect(area.x+14,area.y,area.width-14,area.height),(slot==0?"L   ":"R   ")+FooterStatus(slot),statusLabel);
         }
 
         void DrawSettings()
         {
-            Fill(new Rect(0,0,1280,720),new Color(.006f,.010f,.025f,.90f));
-            Fill(new Rect(130,74,1020,604),new Color(.05f,.08f,.14f));
+            var savedSkin=GUI.skin;
+            bool savedEnabled=GUI.enabled;
+            GUI.enabled=true;
+            GUI.skin=cameraSkin;
+            Fill(new Rect(0,0,1280,720),new Color(.014f,.037f,.026f,.94f));
+            Fill(new Rect(130,74,1020,604),new Color(.055f,.125f,.087f));
+            Fill(new Rect(130,74,60,1),new Color(.64f,.94f,.80f,.55f));
+            Fill(new Rect(1090,677,60,1),new Color(.94f,.76f,.49f,.4f));
             GUI.Label(new Rect(162,94,620,40),"カメラの設定",title);
             GUI.Label(new Rect(162,148,440,44),"空欄なら接続中の2台を自動設定します。\n番号を入力すると、そのカメラを指定できます。",small);
             GUI.Label(new Rect(162,203,114,30),"左のカメラ",label);
@@ -316,16 +377,66 @@ namespace Naispo.Interaction
                 GUIUtility.systemCopyBuffer=diagnostics;copyStatus="コピーしました";
             }
             GUI.Label(new Rect(892,610,226,28),copyStatus,small);
+            GUI.skin=savedSkin;
+            GUI.enabled=savedEnabled;
         }
 
         void EnsureStyles()
         {
             if(label!=null)return;
-            label=new GUIStyle(GUI.skin.label){font=japaneseFont,fontSize=18,normal={textColor=new Color(.86f,.93f,1)}};
-            small=new GUIStyle(label){fontSize=15,wordWrap=true,normal={textColor=new Color(.60f,.71f,.85f)}};
-            title=new GUIStyle(label){fontSize=30,fontStyle=FontStyle.Bold};
-            button=new GUIStyle(GUI.skin.button){font=japaneseFont,fontSize=17};
-            field=new GUIStyle(GUI.skin.textField){font=japaneseFont,fontSize=20,padding=new RectOffset(8,8,6,6)};
+            var ink=new Color(.94f,.95f,.86f);
+            var dim=new Color(.59f,.69f,.62f);
+            idleTexture=FlatTexture(new Color(.07f,.16f,.11f));
+            hoverTexture=FlatTexture(new Color(.13f,.25f,.18f));
+            pressedTexture=FlatTexture(new Color(.20f,.34f,.24f));
+            selectedTexture=FlatTexture(new Color(.79f,.88f,.74f));
+            fieldTexture=FlatTexture(new Color(.025f,.075f,.05f));
+            trackTexture=FlatTexture(new Color(.16f,.25f,.19f));
+            label=new GUIStyle(GUI.skin.label){font=japaneseFont,fontSize=18,normal={textColor=ink}};
+            small=new GUIStyle(label){fontSize=15,wordWrap=true,normal={textColor=dim}};
+            statusLabel=new GUIStyle(small){fontSize=13,wordWrap=false,alignment=TextAnchor.MiddleLeft};
+            title=new GUIStyle(label){fontSize=28,fontStyle=FontStyle.Normal};
+            button=new GUIStyle(GUI.skin.button){font=japaneseFont,fontSize=17,border=new RectOffset(),padding=new RectOffset(10,10,4,4)};
+            SetFlatStates(button,idleTexture,hoverTexture,pressedTexture,ink);
+            selectedButton=new GUIStyle(button);
+            SetFlatStates(selectedButton,selectedTexture,selectedTexture,pressedTexture,new Color(.07f,.16f,.11f));
+            selectedButton.active.textColor=selectedButton.onActive.textColor=ink;
+            field=new GUIStyle(GUI.skin.textField){font=japaneseFont,fontSize=20,border=new RectOffset(),padding=new RectOffset(8,8,6,6)};
+            SetFlatStates(field,fieldTexture,idleTexture,idleTexture,ink);
+            cameraSkin=Instantiate(GUI.skin);
+            cameraSkin.hideFlags=HideFlags.HideAndDontSave;
+            cameraSkin.horizontalSlider=new GUIStyle(GUI.skin.horizontalSlider){fixedHeight=4,border=new RectOffset(),margin=new RectOffset(0,0,8,8)};
+            SetFlatStates(cameraSkin.horizontalSlider,trackTexture,trackTexture,trackTexture,ink);
+            cameraSkin.horizontalSliderThumb=new GUIStyle(GUI.skin.horizontalSliderThumb){fixedWidth=12,fixedHeight=16,border=new RectOffset(),margin=new RectOffset(0,0,-6,0)};
+            SetFlatStates(cameraSkin.horizontalSliderThumb,selectedTexture,selectedTexture,hoverTexture,ink);
+            FlattenScrollStyle(cameraSkin.verticalScrollbar,fieldTexture,fieldTexture,fieldTexture);
+            FlattenScrollStyle(cameraSkin.verticalScrollbarThumb,trackTexture,hoverTexture,pressedTexture);
+            FlattenScrollStyle(cameraSkin.verticalScrollbarUpButton,fieldTexture,hoverTexture,pressedTexture);
+            FlattenScrollStyle(cameraSkin.verticalScrollbarDownButton,fieldTexture,hoverTexture,pressedTexture);
+            FlattenScrollStyle(cameraSkin.horizontalScrollbar,fieldTexture,fieldTexture,fieldTexture);
+            FlattenScrollStyle(cameraSkin.horizontalScrollbarThumb,trackTexture,hoverTexture,pressedTexture);
+            FlattenScrollStyle(cameraSkin.horizontalScrollbarLeftButton,fieldTexture,hoverTexture,pressedTexture);
+            FlattenScrollStyle(cameraSkin.horizontalScrollbarRightButton,fieldTexture,hoverTexture,pressedTexture);
+        }
+
+        static Texture2D FlatTexture(Color color)
+        {
+            var texture=new Texture2D(1,1,TextureFormat.RGBA32,false){hideFlags=HideFlags.HideAndDontSave,wrapMode=TextureWrapMode.Clamp};
+            texture.SetPixel(0,0,color);texture.Apply();return texture;
+        }
+
+        static void SetFlatStates(GUIStyle style,Texture2D normal,Texture2D hover,Texture2D active,Color color)
+        {
+            style.normal.background=normal;style.hover.background=hover;style.active.background=active;style.focused.background=hover;
+            style.onNormal.background=normal;style.onHover.background=hover;style.onActive.background=active;style.onFocused.background=hover;
+            style.normal.textColor=style.hover.textColor=style.active.textColor=style.focused.textColor=color;
+            style.onNormal.textColor=style.onHover.textColor=style.onActive.textColor=style.onFocused.textColor=color;
+        }
+
+        static void FlattenScrollStyle(GUIStyle style,Texture2D normal,Texture2D hover,Texture2D active)
+        {
+            style.border=new RectOffset();
+            SetFlatStates(style,normal,hover,active,Color.white);
         }
 
         static void Fill(Rect rect,Color color){var old=GUI.color;GUI.color=color;GUI.DrawTexture(rect,Texture2D.whiteTexture);GUI.color=old;}
@@ -341,6 +452,13 @@ namespace Naispo.Interaction
             if(Sensors!=null)Sensors.StopWorkers();
             foreach(var settings in playerSettings)if(settings!=null)Destroy(settings);
             if(sensorSettings!=null)Destroy(sensorSettings);
+            if(cameraSkin!=null)Destroy(cameraSkin);
+            if(idleTexture!=null)Destroy(idleTexture);
+            if(hoverTexture!=null)Destroy(hoverTexture);
+            if(pressedTexture!=null)Destroy(pressedTexture);
+            if(selectedTexture!=null)Destroy(selectedTexture);
+            if(fieldTexture!=null)Destroy(fieldTexture);
+            if(trackTexture!=null)Destroy(trackTexture);
         }
     }
 }

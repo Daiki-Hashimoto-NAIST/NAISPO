@@ -28,6 +28,7 @@ namespace Naispo.Interaction
         {
             if(mode == Mode || (mode != RallyMode.StarCollection && mode != RallyMode.Versus)) return;
             Mode = mode;
+            RefreshPresentation();
             settingsOpen = false;
             RestartGame();
             if(configured) RefreshLighting();
