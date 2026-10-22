@@ -40,7 +40,7 @@ namespace Naispo.Interaction
     }
 
     /// <summary>Two players return one ball over a low net and collect a shared arc of coins.</summary>
-    public sealed class CooperativeCoinGame : MonoBehaviour
+    public sealed partial class CooperativeCoinGame : MonoBehaviour
     {
         public const int CoinsPerRound = 9;
         const float MaximumBallSpeedFactor = 1.18f;
@@ -66,10 +66,12 @@ namespace Naispo.Interaction
         Texture2D coinTexture, whiteTexture, haloTexture, lightTexture;
         PhysicsMaterial2D wallMaterial;
         GUIStyle titleStyle, bodyStyle, scoreStyle, goalStyle, buttonStyle, centeredStyle, smallStyle;
+        GUIStyle leftScoreStyle, rightScoreStyle, matchHintStyle;
         Texture2D panelTexture;
         Vector2 center, previous;
         float halfWidth, halfHeight, serveRemaining=-1, clearRemaining=-1, animationTime;
         int servingSide=-1;
+        int lastPointWinner;
         bool configured, paused, inputReady=true, settingsOpen;
 
         public int TeamScore => progress.TeamScore;
@@ -83,9 +85,10 @@ namespace Naispo.Interaction
         public string InputWaitTitle { get; set; } = "ふたりの準備を待っています";
         public string InputWaitDetail { get; set; } = "両手をセンサーに見せると再開します";
         public bool WaitingToServe => serveRemaining >= 0;
-        public bool CanAdvanceBall => configured && isActiveAndEnabled && inputReady && !paused && !settingsOpen && serveRemaining<0 && clearRemaining<0;
+        public bool CanAdvanceBall => configured && isActiveAndEnabled && inputReady && !paused && !settingsOpen && !ExternalOverlayOpen && serveRemaining<0 && clearRemaining<0 && (!IsVersus || !versus.Complete);
         public bool RoundComplete => progress.Complete;
         public float ArenaFloor => center.y-halfHeight+0.6f;
+        public float MatchFloor => ArenaFloor+1f;
         public float HalfWidth => halfWidth;
         public BoxCollider2D NetCollider => net;
         public bool BallLightEnabled
@@ -130,7 +133,7 @@ namespace Naispo.Interaction
             ball.Body.gravityScale=0.55f;
             ball.Body.linearDamping=0.015f;
             ball.maximumSpeed=ballSpeed*MaximumBallSpeedFactor;
-            BuildArtwork(); BuildArena(); BuildCoins(); BuildBallLight();
+            BuildArtwork(); BuildArena(); BuildCoins(); BuildBallLight(); BuildVersusArtwork();
             configured=true;
             RefreshNet(); PlaceCoins(); BeginServe(1.4f);
         }
@@ -274,7 +277,8 @@ namespace Naispo.Interaction
         void BeginServe(float delay)
         {
             ball.CancelBarrierImpact();
-            servingSide=progress.TakeServeSide();
+            ResetVersusRally();
+            servingSide=IsVersus ? versus.NextServeSide : progress.TakeServeSide();
             serveRemaining=delay;
             Vector2 spawn=ServePosition(servingSide);
             ball.Body.position=spawn; ball.transform.position=new Vector3(spawn.x,spawn.y,ball.transform.position.z);
@@ -298,14 +302,14 @@ namespace Naispo.Interaction
         public void RestartGame()
         {
             if(!configured) return;
-            progress.Reset(); clearRemaining=-1; paused=false;
+            progress.Reset(); versus.Reset(); lastPointWinner=0; clearRemaining=-1; paused=false;
             PlaceCoins(); BeginServe(1.2f);
         }
 
         void Update()
         {
             if(!configured) return;
-            if(!inputReady || paused || settingsOpen) return;
+            if(!inputReady || paused || settingsOpen || ExternalOverlayOpen || (IsVersus && versus.Complete)) return;
             if(clearRemaining>=0)
             {
                 clearRemaining-=Time.deltaTime;
@@ -321,12 +325,21 @@ namespace Naispo.Interaction
                 if(serveRemaining<=0)
                 {
                     serveRemaining=-1;
+                    lastPointWinner=0;
                     ball.Body.linearVelocity=new Vector2(-servingSide*.25f,-.5f);
                     ApplySimulationState();
                 }
                 return;
             }
             Vector2 current=ball.Body.position;
+            if(IsVersus)
+            {
+                if(!ball.IsInBarrierImpact && TryAwardVersusPoint(previous,current)) return;
+                float ballRadius=ballCollider.radius*Mathf.Max(Mathf.Abs(ball.transform.lossyScale.x),Mathf.Abs(ball.transform.lossyScale.y));
+                UpdateVersus(Time.deltaTime,previous,current,ballRadius+.30f);
+                previous=current;
+                return;
+            }
             if(current.y<ArenaFloor-.8f)
             {
                 progress.RegisterMiss(); BeginServe(1.2f);
@@ -364,6 +377,7 @@ namespace Naispo.Interaction
                 }
             }
             RefreshLighting();
+            RefreshVersusArtwork();
         }
 
         // Match the original light-coin game's full inner light and soft outer edge.
@@ -375,7 +389,7 @@ namespace Naispo.Interaction
 
         public float CoinVisibility(int index)
         {
-            if(!configured || !ballLightEnabled || index<0 || index>=CoinsPerRound) return 0;
+            if(!configured || IsVersus || !ballLightEnabled || index<0 || index>=CoinsPerRound) return 0;
             return RevealAmount(Vector2.Distance(coinPositions[index],ball.transform.position),ballLightRadius);
         }
 
@@ -408,6 +422,39 @@ namespace Naispo.Interaction
         {
             return CooperativeReflection(velocity,normal,softness,position.x-center.x,ballSpeed);
         }
+        public Vector2 PlayerBarrierBounce(Vector2 velocity,Vector2 normal,float softness,Vector2 position,int playerSide)
+        {
+            float strength=IsVersus && CanAdvanceBall ? versus.RegisterReturn(playerSide) : 1;
+            return BarrierBounce(velocity,normal,softness,position)*strength;
+        }
+
+        internal bool TryScoreFloorBeforeBarrier(Vector2 contactPosition)
+        {
+            // A low barrier cannot rescue a ball that has already touched the floor.
+            // Check before compression, which may legitimately dip below the line.
+            return IsVersus && CanAdvanceBall && TryAwardVersusPoint(previous,contactPosition);
+        }
+
+        bool TryAwardVersusPoint(Vector2 from,Vector2 to)
+        {
+            float radius=ballCollider.radius*Mathf.Max(Mathf.Abs(ball.transform.lossyScale.x),Mathf.Abs(ball.transform.lossyScale.y));
+            float floor=MatchFloor+radius;
+            if(to.y>floor) return false;
+            float t=from.y>floor && from.y>to.y ? Mathf.Clamp01((from.y-floor)/(from.y-to.y)) : 1;
+            float crossingX=Mathf.Lerp(from.x,to.x,t)-center.x;
+            int losingSide=Mathf.Abs(crossingX)<.001f ? servingSide : crossingX<0 ? -1 : 1;
+            if(!versus.AwardPoint(losingSide)) return false;
+            lastPointWinner=-losingSide;
+            if(versus.Complete)
+            {
+                ball.CancelBarrierImpact();
+                ball.Body.linearVelocity=Vector2.zero;
+                ResetVersusRally();
+                ApplySimulationState();
+            }
+            else BeginServe(1.6f);
+            return true;
+        }
         public static Vector2 CooperativeReflection(Vector2 velocity,Vector2 normal,float softness,float ballX,float speed)
         {
             normal.Normalize();
@@ -433,9 +480,31 @@ namespace Naispo.Interaction
             smallStyle=new GUIStyle(bodyStyle) { fontSize=13,normal={textColor=new Color(.65f,.72f,.83f)} };
             scoreStyle=new GUIStyle(titleStyle) { fontSize=52,alignment=TextAnchor.MiddleLeft,padding=new RectOffset(0,0,0,0),normal={textColor=new Color(1,.95f,.78f)} };
             goalStyle=new GUIStyle(bodyStyle) { fontSize=26,alignment=TextAnchor.MiddleLeft,padding=new RectOffset(0,0,0,0),normal={textColor=new Color(.64f,.69f,.81f)} };
+            leftScoreStyle=new GUIStyle(scoreStyle) { alignment=TextAnchor.MiddleCenter,normal={textColor=PlayerColor(-1)} };
+            rightScoreStyle=new GUIStyle(scoreStyle) { alignment=TextAnchor.MiddleCenter,normal={textColor=PlayerColor(1)} };
+            matchHintStyle=new GUIStyle(smallStyle) { alignment=TextAnchor.MiddleCenter };
             centeredStyle=new GUIStyle(titleStyle) { alignment=TextAnchor.MiddleCenter,fontSize=24 };
             buttonStyle=new GUIStyle(GUI.skin.button) { font=GuiFont,fontSize=15,fontStyle=FontStyle.Bold };
             panelTexture=new Texture2D(1,1); panelTexture.SetPixel(0,0,new Color(.055f,.076f,.14f,.97f)); panelTexture.Apply();
+        }
+        static Color PlayerColor(int side) => side<0 ? new Color(.36f,.91f,.96f) : new Color(1,.57f,.51f);
+
+        void DrawVersusHud()
+        {
+            GUI.DrawTexture(new Rect(440,8,400,94),panelTexture);
+            GUI.Label(new Rect(464,12,100,24),"左",matchHintStyle);
+            GUI.Label(new Rect(716,12,100,24),"右",matchHintStyle);
+            GUI.Label(new Rect(464,31,100,62),versus.LeftScore.ToString(),leftScoreStyle);
+            GUI.Label(new Rect(716,31,100,62),versus.RightScore.ToString(),rightScoreStyle);
+            GUI.Label(new Rect(590,27,100,35),"—",centeredStyle);
+            GUI.Label(new Rect(560,69,160,24),"3点先取",matchHintStyle);
+            if(versus.SoftenedSide!=0)
+            {
+                Fill(new Rect(476,112,328,30),new Color(.21f,.10f,.34f,.95f));
+                GUI.Label(new Rect(476,114,328,26),$"{(versus.SoftenedSide<0 ? "左" : "右")}：次の返球 −25％",matchHintStyle);
+            }
+            else if(ItemVisible)
+                GUI.Label(new Rect(400,112,480,26),"紫の印を取ると、相手の次の返球が弱くなる",matchHintStyle);
         }
         static void Fill(Rect rect,Color color)
         {
@@ -449,6 +518,8 @@ namespace Naispo.Interaction
             float scale=Mathf.Min(Screen.width/1280f,Screen.height/720f);
             Vector2 offset=new Vector2((Screen.width-1280*scale)*.5f,(Screen.height-720*scale)*.5f);
             GUI.matrix=Matrix4x4.TRS(offset,Quaternion.identity,new Vector3(scale,scale,1));
+            if(IsVersus) DrawVersusHud();
+            else {
             // Only the current objective stays prominent during play. The running
             // total belongs in the round-complete message, away from this counter.
             GUI.DrawTexture(new Rect(486,8,308,94),panelTexture);
@@ -466,6 +537,7 @@ namespace Naispo.Interaction
                 GUI.DrawTexture(new Rect(536+i*24,76,16,16),coinTexture);
                 GUI.color=tint;
             }
+            }
             if(GUI.Button(new Rect(1063,19,83,35),paused ? "再開" : "一時停止",buttonStyle)) SetPaused(!paused);
             if(GUI.Button(new Rect(1155,19,94,35),"設定",buttonStyle)) { settingsOpen=!settingsOpen; ApplySimulationState(); }
             if(GUI.Button(new Rect(1063,65,186,29),"はじめから",buttonStyle)) RestartGame();
@@ -473,6 +545,8 @@ namespace Naispo.Interaction
             if(settingsOpen) DrawSettings();
             else if(!inputReady) DrawMessage(InputWaitTitle,InputWaitDetail,new Color(.44f,.83f,.92f));
             else if(paused) DrawMessage("ひとやすみ","「再開」で続けられます",new Color(.76f,.82f,.95f));
+            else if(IsVersus && versus.Complete) DrawMessage(versus.Winner<0 ? "左のプレイヤーの勝ち！" : "右のプレイヤーの勝ち！","「はじめから」で、もう一度対戦できます",PlayerColor(versus.Winner));
+            else if(IsVersus && lastPointWinner!=0 && serveRemaining>=0) DrawMessage(lastPointWinner<0 ? "左に1点" : "右に1点",$"{(servingSide<0 ? "左" : "右")}のプレイヤーから再開",PlayerColor(lastPointWinner));
             else if(clearRemaining>=0) DrawMessage("星がそろった！",$"ここまで {TeamScore} 個。次の星を探そう",new Color(1,.8f,.34f));
             else if(serveRemaining>=0)
             {
@@ -492,8 +566,14 @@ namespace Naispo.Interaction
         void DrawSettings()
         {
             Fill(new Rect(0,110,1280,610),new Color(.015f,.025f,.06f,.72f));
-            GUI.DrawTexture(new Rect(380,164,520,440),panelTexture);
-            GUI.Label(new Rect(414,186,420,40),"遊びやすさを調整",titleStyle);
+            GUI.DrawTexture(new Rect(380,100,520,504),panelTexture);
+            GUI.Label(new Rect(414,120,420,40),"遊びやすさを調整",titleStyle);
+            GUI.enabled=Mode!=RallyMode.StarCollection;
+            if(GUI.Button(new Rect(414,168,216,36),"星あつめ",buttonStyle)) SetMode(RallyMode.StarCollection);
+            GUI.enabled=Mode!=RallyMode.Versus;
+            if(GUI.Button(new Rect(646,168,216,36),"対戦 · 3点先取",buttonStyle)) SetMode(RallyMode.Versus);
+            GUI.enabled=true;
+            GUI.Label(new Rect(414,208,452,25),"モードを切り替えると、新しいゲームが始まります",smallStyle);
             GUI.Label(new Rect(414,239,420,30),$"ネットの高さ   {NetHeight:F1}",bodyStyle);
             NetHeight=GUI.HorizontalSlider(new Rect(418,282,438,22),NetHeight,1f,3.1f);
             GUI.Label(new Rect(414,307,440,25),"低いほど、ふたりでラリーをつなげやすい",smallStyle);
@@ -502,7 +582,7 @@ namespace Naispo.Interaction
             GUI.Label(new Rect(414,423,440,25),"手の幅を狭めると強く、傾けると左右へ",smallStyle);
             GUI.Label(new Rect(414,466,270,28),"ボールの光",bodyStyle);
             if(GUI.Button(new Rect(746,461,120,34),BallLightEnabled ? "ON" : "OFF",buttonStyle)) BallLightEnabled=!BallLightEnabled;
-            GUI.Label(new Rect(414,500,452,25),"光が届く範囲だけ、星が見えて取れます",smallStyle);
+            GUI.Label(new Rect(414,500,452,25),IsVersus ? "紫のアイテム：相手の次の返球を25％弱くする" : "光が届く範囲だけ、星が見えて取れます",smallStyle);
             if(GUI.Button(new Rect(414,544,452,36),"ゲームに戻る",buttonStyle)) { settingsOpen=false; ApplySimulationState(); }
         }
 
@@ -517,6 +597,7 @@ namespace Naispo.Interaction
         {
             if(ball != null) ball.CancelBarrierImpact();
             if(ball != null && ball.CooperativeGame==this) ball.CooperativeGame=null;
+            CleanupVersusArtwork();
             Release(arenaRoot); Release(coinSprite); Release(whiteSprite); Release(haloSprite); Release(lightSprite);
             Release(coinTexture); Release(whiteTexture); Release(haloTexture); Release(lightTexture); Release(panelTexture);
             Release(wallMaterial);

@@ -8,6 +8,7 @@ namespace Naispo.Interaction
     public sealed class ElasticBarrier : MonoBehaviour
     {
         public KinectSettings settings;
+        public int PlayerSide { get; set; }
         const int Samples = 25;
         readonly Vector2[] points = new Vector2[Samples];
         EdgeCollider2D edge;
@@ -132,9 +133,11 @@ namespace Naispo.Interaction
         bool TryHoldBall(AirHockeyBall ball,float side,float speed)
         {
             if(IsHoldingBall) return false;
+            if(ball.CooperativeGame.TryScoreFloorBeforeBarrier(ball.Body.position)) return true;
             Vector2 normal=(Vector2)transform.up*(side>=0 ? 1 : -1);
-            Vector2 outgoing=ball.CooperativeGame.BarrierBounce(ball.Body.linearVelocity,normal,softness,ball.Body.position);
+            Vector2 incoming=ball.Body.linearVelocity;
             if(!ball.BeginBarrierImpact(this)) return false;
+            Vector2 outgoing=ball.CooperativeGame.PlayerBarrierBounce(incoming,normal,softness,ball.Body.position,PlayerSide);
             heldBall=ball; rebound=outgoing;
             Vector2 local=transform.InverseTransformPoint(ball.Body.position);
             ballPoint=Mathf.Clamp01(local.x/length+.5f);

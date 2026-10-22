@@ -98,6 +98,7 @@ namespace Naispo.Interaction
             manager.colliderController=colliders;manager.source=demo;manager.useHandWalls=true;
             Players[slot]=manager;root.SetActive(true);
             handWalls[slot]=root.GetComponent<HandWallController>();
+            handWalls[slot].PlayerSide=slot==0 ? -1 : 1;
         }
 
         void Start()
@@ -128,7 +129,11 @@ namespace Naispo.Interaction
                 Game.InputWaitTitle="ふたりの準備を待っています";
                 Game.InputWaitDetail="左右の認識状況を画面下で確認してください";
             }
-            for(int i=0;i<2;i++)demos[i].acceptControls=Application.isFocused&&!SensorSettingsOpen&&!Game.SettingsOpen&&!Game.IsPaused;
+            for(int i=0;i<2;i++)
+            {
+                demos[i].acceptControls=Application.isFocused&&!SensorSettingsOpen&&!Game.SettingsOpen&&!Game.IsPaused;
+                handWalls[i].Softened=Game.IsVersus&&Game.VersusState.SoftenedSide==(i==0 ? -1 : 1);
+            }
             gameCamera.backgroundColor=new Color(.018f,.028f,.065f);
         }
 
@@ -243,7 +248,7 @@ namespace Naispo.Interaction
             GUI.Label(new Rect(888,630,370,32),SensorMode?"右の人  "+FooterStatus(1):"右の人  ↑↓←→ 移動 / J・L 傾き",SensorMode?small:label);
             GUI.Label(new Rect(506,666,355,28),SensorMode?"詳細と対処は「カメラの設定」へ":"Z・X 手幅  ／  マウスでも移動",small);
             GUI.Label(new Rect(888,666,370,28),SensorMode?"2人そろうとボールが動きます":"U・O 手幅  ／  マウスでも移動",small);
-            GUI.Label(new Rect(24,682,460,26),SensorMode?"KINECT 2台  ·  協力プレイ":"DEMO  ·  カメラを使わず2人で操作できます",small);
+            GUI.Label(new Rect(24,682,460,26),SensorMode?(Game.IsVersus?"KINECT 2台  ·  対戦":"KINECT 2台  ·  星あつめ"):"DEMO  ·  カメラを使わず2人で操作できます",small);
             GUI.enabled=true;
             if(SensorSettingsOpen)DrawSettings();
             Game.ExternalOverlayOpen=SensorSettingsOpen;

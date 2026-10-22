@@ -10,6 +10,20 @@ namespace Naispo.Interaction
     public sealed class HandWallController : MonoBehaviour
     {
         public float thickness = 0.16f;
+        public int PlayerSide { get; set; }
+        readonly Color[] baseColors = new Color[3];
+        bool softened;
+        public bool Softened
+        {
+            get=>softened;
+            set
+            {
+                if(softened==value)return;
+                softened=value;
+                for(int i=0;i<textures.Length;i++) if(textures[i]!=null)
+                { textures[i].SetPixel(0,0,softened ? new Color(.74f,.46f,1) : baseColors[i]); textures[i].Apply(); }
+            }
+        }
         KinectSilhouetteManager manager;
         readonly EdgeCollider2D[] walls = new EdgeCollider2D[3];
         readonly ElasticBarrier[] barriers = new ElasticBarrier[3];
@@ -56,7 +70,8 @@ namespace Naispo.Interaction
                 walls[i].enabled = false;
                 lines[i] = go.AddComponent<LineRenderer>();
                 textures[i] = new Texture2D(1,1);
-                textures[i].SetPixel(0,0, colors != null && i < colors.Length ? colors[i] : Color.white);
+                baseColors[i]=colors != null && i < colors.Length ? colors[i] : Color.white;
+                textures[i].SetPixel(0,0,softened ? new Color(.74f,.46f,1) : baseColors[i]);
                 textures[i].Apply();
                 materials[i] = new Material(template) { mainTexture = textures[i] };
                 lines[i].sharedMaterial = materials[i];
@@ -65,6 +80,7 @@ namespace Naispo.Interaction
                 lines[i].sortingOrder = 10;
                 lines[i].enabled = false;
                 barriers[i] = go.AddComponent<ElasticBarrier>();
+                barriers[i].PlayerSide=PlayerSide;
                 barriers[i].Initialize(walls[i], lines[i]);
             }
         }
