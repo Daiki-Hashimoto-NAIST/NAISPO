@@ -11,6 +11,7 @@ namespace Naispo.Interaction
         public PhysicsMaterial2D physicsMaterial;
         public Rigidbody2D Body {get;private set;}
         public bool GravityGame { get; set; }
+        public CooperativeCoinGame CooperativeGame { get; set; }
         PhysicsMaterial2D runtimeMaterial;
         void Awake()
         {

@@ -22,9 +22,13 @@ namespace Naispo.Tests
             Assert.IsFalse(walls.enabled);
             Assert.That(walls.rightWall.transform.position.x-walls.leftWall.transform.position.x,Is.LessThan(8));
             Assert.That(ball.Body.gravityScale,Is.GreaterThan(0));
+            // Teleport both poses; interpolation can otherwise restore the old
+            // transform before the next physics step in a fast batch-mode run.
             ball.Body.position=new Vector2(0,-7);
-            yield return null;
-            yield return null;
+            ball.transform.position=new Vector3(0,-7,0);
+            Physics2D.SyncTransforms();
+            float dropDeadline=Time.time+0.5f;
+            while(ball.Body.simulated && Time.time<dropDeadline) yield return null;
             Assert.IsFalse(ball.Body.simulated);
             float deadline=Time.time+1.2f;
             while(!ball.Body.simulated && Time.time<deadline) yield return null;

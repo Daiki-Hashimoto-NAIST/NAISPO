@@ -10,7 +10,7 @@ using Stopwatch = System.Diagnostics.Stopwatch;
 namespace Naispo.Kinect
 {
     [DisallowMultipleComponent]
-    public sealed class AzureKinectBodySource : MonoBehaviour
+    public sealed class AzureKinectBodySource : BodyTrackingSource
     {
         public KinectSettings settings;
         [SerializeField] string status = "Stopped";
@@ -18,11 +18,13 @@ namespace Naispo.Kinect
         [SerializeField] long receivedFrames;
         [SerializeField] float captureFps;
         [SerializeField] int detectedBodyCount, mapWidth, mapHeight;
-        public string Status => status;
-        public float CaptureFps => captureFps;
+        public override string Status => status;
+        public override float CaptureFps => captureFps;
         public long ReceivedFrames => Interlocked.Read(ref receivedFrames);
-        public bool WorkerAlive => worker != null && worker.IsAlive;
-        public bool HasFailed => failed;
+        public override bool WorkerAlive => worker != null && worker.IsAlive;
+        public override bool HasFailed => failed;
+        public override int CaptureGeneration => generation;
+        int generation;
         public bool IsInitializingTracker => initializingTracker;
 
         LatestBodyFrameBuffer frames = new LatestBodyFrameBuffer();
@@ -42,6 +44,7 @@ namespace Naispo.Kinect
             // Snapshot all Unity settings/paths on the main thread.
             var config = new CaptureOptions(settings, Application.dataPath, Application.streamingAssetsPath, Application.isEditor);
             stopRequested = failed = false;
+            generation++;
             frames = new LatestBodyFrameBuffer();
             receivedFrames = 0;
             captureFps = 0;
@@ -50,7 +53,7 @@ namespace Naispo.Kinect
             worker.Start();
         }
 
-        public bool TryGetLatest(ref BodyFrameData destination) => frames.TryTake(ref destination);
+        public override bool TryGetLatest(ref BodyFrameData destination) => frames.TryTake(ref destination);
 
         void Update()
         {

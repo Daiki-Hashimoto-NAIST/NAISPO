@@ -1,6 +1,6 @@
 {
   "name": "Naispo.Runtime",
   "rootNamespace": "Naispo",
-  "references": [],
+  "references": ["Unity.InputSystem"],
   "autoReferenced": true
 }

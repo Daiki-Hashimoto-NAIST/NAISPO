@@ -35,6 +35,10 @@
 ExportedObj/
 .consulo/
 *.csproj
+!/Tools/KinectWorker/KinectWorker.csproj
+/Tools/KinectWorker/bin/
+/Tools/KinectWorker/obj/
+/Tools/KinectWorker/runtime/
 *.unityproj
 *.sln
 *.suo

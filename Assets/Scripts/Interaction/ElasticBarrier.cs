@@ -85,7 +85,9 @@ namespace Naispo.Interaction
             if(gameBall != null && gameBall.GravityGame)
             {
                 Vector2 normal = (Vector2)transform.up * (side >= 0 ? 1 : -1);
-                ball.linearVelocity = LightCoinGame.BoostReflection(ball.linearVelocity,normal,softness);
+                ball.linearVelocity = gameBall.CooperativeGame != null
+                    ? gameBall.CooperativeGame.BarrierBounce(ball.linearVelocity,normal,softness,ball.position)
+                    : LightCoinGame.BoostReflection(ball.linearVelocity,normal,softness);
             }
         }
         public void ResetSpring() { offset=velocity=0; }

@@ -8,6 +8,8 @@ namespace Naispo.Silhouette
         public Camera targetCamera;
         public KinectSettings settings;
         public float silhouettePlaneZ;
+        [Tooltip("Normalized portion of the common camera world; does not split physics.")]
+        public Rect viewport = new Rect(0,0,1,1);
         public int Width { get; private set; } = 320;
         public int Height { get; private set; } = 288;
         public float UnitsPerPixel { get; private set; }
@@ -21,6 +23,8 @@ namespace Naispo.Silhouette
             if (targetCamera == null || !targetCamera.orthographic || width <= 0 || height <= 0) return false;
             var size = new Vector2(2 * targetCamera.orthographicSize * targetCamera.aspect, 2 * targetCamera.orthographicSize);
             var center = (Vector2)targetCamera.transform.position;
+            center += new Vector2((viewport.center.x-.5f)*size.x,(viewport.center.y-.5f)*size.y);
+            size = Vector2.Scale(size,viewport.size);
             bool mirror = settings != null && settings.mirrorX;
             float scale = Mathf.Min(size.x / width, size.y / height);
             if (Width == width && Height == height && ViewSize == size && Center == center && mirrored == mirror && Mathf.Approximately(UnitsPerPixel, scale)) return false;
@@ -43,5 +47,10 @@ namespace Naispo.Silhouette
             float x = p.x + Width * 0.5f;
             return new Vector2(mirrored ? Width - x : x, Height * 0.5f - p.y);
         }
+
+        // Calibration uses pixel centers (first center = 0,0), while the shared
+        // image/contour mapper uses pixel edges (first center = 0.5,0.5).
+        public Vector2 DepthPixelCenterToWorld(Vector2 pixel) => PixelToWorld(pixel + Vector2.one * 0.5f);
+        public bool ContainsDepthPixelCenter(Vector2 pixel) => pixel.x >= -0.5f && pixel.y >= -0.5f && pixel.x < Width - 0.5f && pixel.y < Height - 0.5f;
     }
 }
