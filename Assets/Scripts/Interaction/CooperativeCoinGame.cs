@@ -65,7 +65,7 @@ namespace Naispo.Interaction
         Sprite coinSprite, whiteSprite, haloSprite, lightSprite;
         Texture2D coinTexture, whiteTexture, haloTexture, lightTexture;
         PhysicsMaterial2D wallMaterial;
-        GUIStyle titleStyle, eyebrowStyle, bodyStyle, scoreStyle, buttonStyle, centeredStyle, smallStyle;
+        GUIStyle titleStyle, bodyStyle, scoreStyle, goalStyle, buttonStyle, centeredStyle, smallStyle;
         Texture2D panelTexture;
         Vector2 center, previous;
         float halfWidth, halfHeight, serveRemaining=-1, clearRemaining=-1, animationTime;
@@ -140,32 +140,23 @@ namespace Naispo.Interaction
             whiteTexture=new Texture2D(1,1,TextureFormat.RGBA32,false);
             whiteTexture.SetPixel(0,0,Color.white); whiteTexture.Apply();
             whiteSprite=Sprite.Create(whiteTexture,new Rect(0,0,1,1),Vector2.one*0.5f,1);
-            coinTexture=new Texture2D(64,64,TextureFormat.RGBA32,false);
+            coinTexture=RallyStarArtwork.Create();
             haloTexture=new Texture2D(64,64,TextureFormat.RGBA32,false);
             lightTexture=new Texture2D(128,128,TextureFormat.RGBA32,false) { wrapMode=TextureWrapMode.Clamp };
             for(int y=0;y<64;y++) for(int x=0;x<64;x++)
             {
                 float dx=x-31.5f, dy=y-31.5f;
                 float distance=Mathf.Sqrt(dx*dx+dy*dy);
-                Color c=Color.clear;
-                if(distance<29)
-                {
-                    c=distance>25 ? new Color(1,.69f,.22f) : new Color(1,.87f,.44f);
-                    if(distance<22 && distance>20) c=new Color(.88f,.57f,.12f);
-                    if(Mathf.Abs(dx)<2.2f && Mathf.Abs(dy)<12) c=new Color(1,.98f,.79f);
-                    c.a=Mathf.Clamp01(29-distance);
-                }
-                coinTexture.SetPixel(x,y,c);
                 haloTexture.SetPixel(x,y,new Color(1,1,1,Mathf.Pow(Mathf.Clamp01(1-distance/32),2)));
             }
-            coinTexture.Apply(); haloTexture.Apply();
+            haloTexture.Apply();
             for(int y=0;y<128;y++) for(int x=0;x<128;x++)
             {
                 float distance=Vector2.Distance(new Vector2(x,y),new Vector2(63.5f,63.5f))/64;
                 lightTexture.SetPixel(x,y,new Color(1,1,1,RevealAmount(distance,1)));
             }
             lightTexture.Apply();
-            coinSprite=Sprite.Create(coinTexture,new Rect(0,0,64,64),Vector2.one*.5f,100);
+            coinSprite=Sprite.Create(coinTexture,new Rect(0,0,coinTexture.width,coinTexture.height),Vector2.one*.5f,coinTexture.width/.64f);
             haloSprite=Sprite.Create(haloTexture,new Rect(0,0,64,64),Vector2.one*.5f,64);
             lightSprite=Sprite.Create(lightTexture,new Rect(0,0,128,128),Vector2.one*.5f,128);
         }
@@ -204,9 +195,9 @@ namespace Naispo.Interaction
                 bounceCombine=PhysicsMaterialCombine2D.Minimum };
             Color cyan=new Color(.25f,.86f,.91f), coral=new Color(1,.46f,.40f);
             Rectangle("Left court wash",center+new Vector2(-halfWidth*.5f,-.35f),
-                new Vector2(halfWidth,halfHeight*1.62f),new Color(.08f,.25f,.34f,.19f),-10);
+                new Vector2(halfWidth,halfHeight*1.62f),new Color(.08f,.16f,.29f,.10f),-10);
             Rectangle("Right court wash",center+new Vector2(halfWidth*.5f,-.35f),
-                new Vector2(halfWidth,halfHeight*1.62f),new Color(.35f,.14f,.24f,.17f),-10);
+                new Vector2(halfWidth,halfHeight*1.62f),new Color(.20f,.12f,.29f,.10f),-10);
             Solid("Left outer wall",center+new Vector2(-halfWidth-.12f,-.3f),
                 new Vector2(.24f,halfHeight*2),new Color(.13f,.28f,.37f));
             Solid("Right outer wall",center+new Vector2(halfWidth+.12f,-.3f),
@@ -438,10 +429,10 @@ namespace Naispo.Interaction
         {
             if(titleStyle != null) return;
             titleStyle=new GUIStyle(GUI.skin.label) { font=GuiFont,fontSize=25,fontStyle=FontStyle.Bold,normal={textColor=new Color(.95f,.97f,1)} };
-            eyebrowStyle=new GUIStyle(titleStyle) { fontSize=12,fontStyle=FontStyle.Normal,normal={textColor=new Color(.48f,.71f,.88f)} };
             bodyStyle=new GUIStyle(titleStyle) { fontSize=17,fontStyle=FontStyle.Normal };
             smallStyle=new GUIStyle(bodyStyle) { fontSize=13,normal={textColor=new Color(.65f,.72f,.83f)} };
-            scoreStyle=new GUIStyle(titleStyle) { fontSize=30,alignment=TextAnchor.MiddleRight };
+            scoreStyle=new GUIStyle(titleStyle) { fontSize=52,alignment=TextAnchor.MiddleLeft,padding=new RectOffset(0,0,0,0),normal={textColor=new Color(1,.95f,.78f)} };
+            goalStyle=new GUIStyle(bodyStyle) { fontSize=26,alignment=TextAnchor.MiddleLeft,padding=new RectOffset(0,0,0,0),normal={textColor=new Color(.64f,.69f,.81f)} };
             centeredStyle=new GUIStyle(titleStyle) { alignment=TextAnchor.MiddleCenter,fontSize=24 };
             buttonStyle=new GUIStyle(GUI.skin.button) { font=GuiFont,fontSize=15,fontStyle=FontStyle.Bold };
             panelTexture=new Texture2D(1,1); panelTexture.SetPixel(0,0,new Color(.055f,.076f,.14f,.97f)); panelTexture.Apply();
@@ -458,17 +449,23 @@ namespace Naispo.Interaction
             float scale=Mathf.Min(Screen.width/1280f,Screen.height/720f);
             Vector2 offset=new Vector2((Screen.width-1280*scale)*.5f,(Screen.height-720*scale)*.5f);
             GUI.matrix=Matrix4x4.TRS(offset,Quaternion.identity,new Vector3(scale,scale,1));
-            GUI.DrawTexture(new Rect(0,0,1280,110),panelTexture);
-            Fill(new Rect(0,109,1280,1),new Color(.24f,.32f,.45f,.65f));
-            GUI.Label(new Rect(32,14,270,20),"COIN RALLY  /  2 PLAYERS",eyebrowStyle);
-            GUI.Label(new Rect(30,35,510,40),"ふたりで コインラリー",titleStyle);
-            GUI.Label(new Rect(32,76,510,24),"光るボールを返して、隠れたコインを見つけよう",smallStyle);
-            GUI.Label(new Rect(602,16,170,24),$"ROUND {Round:00}",eyebrowStyle);
-            GUI.Label(new Rect(596,40,178,42),$"{CollectedCount} / {CoinsPerRound}",scoreStyle);
+            // Only the current objective stays prominent during play. The running
+            // total belongs in the round-complete message, away from this counter.
+            GUI.DrawTexture(new Rect(486,8,308,94),panelTexture);
+            string count=CollectedCount.ToString(), goal=$"/ {CoinsPerRound}";
+            float countWidth=scoreStyle.CalcSize(new GUIContent(count)).x;
+            float goalWidth=goalStyle.CalcSize(new GUIContent(goal)).x;
+            float start=640-(32+12+countWidth+8+goalWidth)*.5f;
+            GUI.DrawTexture(new Rect(start,25,32,32),coinTexture);
+            GUI.Label(new Rect(start+44,6,countWidth,66),count,scoreStyle);
+            GUI.Label(new Rect(start+52+countWidth,28,goalWidth,34),goal,goalStyle);
             for(int i=0;i<CoinsPerRound;i++)
-                Fill(new Rect(602+i*19,88,14,4),i<CollectedCount ? new Color(1,.8f,.32f) : new Color(.24f,.28f,.36f));
-            GUI.Label(new Rect(846,16,174,24),"ふたりのコイン",eyebrowStyle);
-            GUI.Label(new Rect(836,40,170,42),$"{TeamScore:000}",scoreStyle);
+            {
+                Color tint=GUI.color;
+                GUI.color=i<CollectedCount ? Color.white : new Color(.36f,.39f,.48f,.6f);
+                GUI.DrawTexture(new Rect(536+i*24,76,16,16),coinTexture);
+                GUI.color=tint;
+            }
             if(GUI.Button(new Rect(1063,19,83,35),paused ? "再開" : "一時停止",buttonStyle)) SetPaused(!paused);
             if(GUI.Button(new Rect(1155,19,94,35),"設定",buttonStyle)) { settingsOpen=!settingsOpen; ApplySimulationState(); }
             if(GUI.Button(new Rect(1063,65,186,29),"はじめから",buttonStyle)) RestartGame();
@@ -476,7 +473,7 @@ namespace Naispo.Interaction
             if(settingsOpen) DrawSettings();
             else if(!inputReady) DrawMessage(InputWaitTitle,InputWaitDetail,new Color(.44f,.83f,.92f));
             else if(paused) DrawMessage("ひとやすみ","「再開」で続けられます",new Color(.76f,.82f,.95f));
-            else if(clearRemaining>=0) DrawMessage("全部とれた！",$"ふたりで {TeamScore} コイン。次のアーチへ！",new Color(1,.8f,.34f));
+            else if(clearRemaining>=0) DrawMessage("星がそろった！",$"ここまで {TeamScore} 個。次の星を探そう",new Color(1,.8f,.34f));
             else if(serveRemaining>=0)
             {
                 string name=servingSide<0 ? "左のプレイヤー" : "右のプレイヤー";
@@ -505,7 +502,7 @@ namespace Naispo.Interaction
             GUI.Label(new Rect(414,423,440,25),"手の幅を狭めると強く、傾けると左右へ",smallStyle);
             GUI.Label(new Rect(414,466,270,28),"ボールの光",bodyStyle);
             if(GUI.Button(new Rect(746,461,120,34),BallLightEnabled ? "ON" : "OFF",buttonStyle)) BallLightEnabled=!BallLightEnabled;
-            GUI.Label(new Rect(414,500,452,25),"光が届く範囲だけ、コインが見えて取れます",smallStyle);
+            GUI.Label(new Rect(414,500,452,25),"光が届く範囲だけ、星が見えて取れます",smallStyle);
             if(GUI.Button(new Rect(414,544,452,36),"ゲームに戻る",buttonStyle)) { settingsOpen=false; ApplySimulationState(); }
         }
 
