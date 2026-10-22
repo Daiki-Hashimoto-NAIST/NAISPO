@@ -116,18 +116,18 @@ namespace Naispo.Interaction
             Game.SetInputReady(ready&&!SensorSettingsOpen);
             if(SensorMode&&Sensors.StartupState==KinectStartupState.Error)
             {
-                Game.InputWaitTitle="カメラを確認してください";
-                Game.InputWaitDetail="「カメラの設定」に原因と接続状況を表示しています";
+                Game.InputWaitTitle="接続エラー";
+                Game.InputWaitDetail="カメラ設定を確認";
             }
             else if(SensorMode&&Sensors.StartupState!=KinectStartupState.Running)
             {
-                Game.InputWaitTitle="Kinectの接続を待っています";
-                Game.InputWaitDetail="カメラと人体認識の起動状況は「カメラの設定」へ";
+                Game.InputWaitTitle="接続中";
+                Game.InputWaitDetail="";
             }
             else
             {
-                Game.InputWaitTitle="ふたりの準備を待っています";
-                Game.InputWaitDetail="左右の認識状況を画面下で確認してください";
+                Game.InputWaitTitle="準備中";
+                Game.InputWaitDetail="両手を見せてください";
             }
             for(int i=0;i<2;i++)
             {
@@ -171,8 +171,18 @@ namespace Naispo.Interaction
             return string.IsNullOrEmpty(handStatus)?"両手を少し離してください":handStatus;
         }
 
-        string FooterStatus(int slot) => Sensors.StartupState==KinectStartupState.Error
-            ? "起動エラー（カメラの設定へ）" : PlayerStatus(slot);
+        string FooterStatus(int slot)
+        {
+            if(Sensors.StartupState==KinectStartupState.Error)return "接続エラー";
+            var receiver=receivers[slot];
+            if(receiver.HasFailed)return "受信エラー";
+            if(Ready(slot))return "READY";
+            if(!receiver.isActiveAndEnabled||!receiver.Connected)return "接続中";
+            if(receiver.ReceivedFrames==0)return "起動中";
+            if(!Players[slot].IsFresh)return "接続待ち";
+            if(handWalls[slot].AcquiringHands)return "認識中";
+            return "両手待ち";
+        }
 
         string DiagnosticSummary()
         {
@@ -241,18 +251,34 @@ namespace Naispo.Interaction
             GUI.matrix=Matrix4x4.TRS(offset,Quaternion.identity,new Vector3(scale,scale,1));
             GUI.enabled=!Game.SettingsOpen&&!SensorSettingsOpen;
             Fill(new Rect(0,620,1280,100),new Color(.035f,.053f,.095f,.98f));
-            if(GUI.Button(new Rect(24,635,170,38),SensorMode?"キーボードに戻る":"キーボード操作",button))UseDemo();
-            if(GUI.Button(new Rect(204,635,142,38),SensorMode?"Kinectを再接続":"Kinect 2台で遊ぶ",button))UseSensors();
-            if(GUI.Button(new Rect(356,635,124,38),"カメラの設定",button))SensorSettingsOpen=true;
-            GUI.Label(new Rect(506,630,355,32),SensorMode?"左の人  "+FooterStatus(0):"左の人  WASD 移動 / Q・E 傾き",SensorMode?small:label);
-            GUI.Label(new Rect(888,630,370,32),SensorMode?"右の人  "+FooterStatus(1):"右の人  ↑↓←→ 移動 / J・L 傾き",SensorMode?small:label);
-            GUI.Label(new Rect(506,666,355,28),SensorMode?"詳細と対処は「カメラの設定」へ":"Z・X 手幅  ／  マウスでも移動",small);
-            GUI.Label(new Rect(888,666,370,28),SensorMode?"2人そろうとボールが動きます":"U・O 手幅  ／  マウスでも移動",small);
-            GUI.Label(new Rect(24,682,460,26),SensorMode?(Game.IsVersus?"KINECT 2台  ·  対戦":"KINECT 2台  ·  星あつめ"):"DEMO  ·  カメラを使わず2人で操作できます",small);
+            if(GUI.Button(new Rect(24,638,124,38),"DEMO",button))UseDemo();
+            if(GUI.Button(new Rect(160,638,124,38),"KINECT",button))UseSensors();
+            if(GUI.Button(new Rect(296,638,100,38),"カメラ",button))SensorSettingsOpen=true;
             GUI.enabled=true;
+            Fill(new Rect(SensorMode?160:24,680,124,3),new Color(.25f,.88f,.94f,.8f));
+            if(SensorMode)
+            {
+                DrawPlayerStatus(0,506);
+                DrawPlayerStatus(1,888);
+            }
+            else if(Game.IsPaused||Game.SettingsOpen)
+            {
+                GUI.Label(new Rect(506,632,355,30),"L  WASD 移動 · Q E 傾き",label);
+                GUI.Label(new Rect(888,632,370,30),"R  ↑↓←→ 移動 · J L 傾き",label);
+                GUI.Label(new Rect(506,666,355,28),"Z X 手幅 · マウス 移動",small);
+                GUI.Label(new Rect(888,666,370,28),"U O 手幅 · マウス 移動",small);
+            }
             if(SensorSettingsOpen)DrawSettings();
             Game.ExternalOverlayOpen=SensorSettingsOpen;
             GUI.matrix=saved;
+        }
+
+        void DrawPlayerStatus(int slot,float x)
+        {
+            var color=slot==0?new Color(.25f,.88f,.94f):new Color(1,.50f,.46f);
+            if(!Ready(slot))color.a=.4f;
+            Fill(new Rect(x,646,4,22),color);
+            GUI.Label(new Rect(x+18,640,338,34),(slot==0?"L   ":"R   ")+FooterStatus(slot),label);
         }
 
         void DrawSettings()

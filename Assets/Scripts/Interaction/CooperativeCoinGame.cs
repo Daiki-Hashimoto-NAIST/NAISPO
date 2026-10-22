@@ -66,10 +66,10 @@ namespace Naispo.Interaction
         Texture2D coinTexture, whiteTexture, haloTexture, lightTexture;
         PhysicsMaterial2D wallMaterial;
         GUIStyle titleStyle, bodyStyle, scoreStyle, goalStyle, buttonStyle, centeredStyle, smallStyle;
-        GUIStyle leftScoreStyle, rightScoreStyle, matchHintStyle;
+        GUIStyle leftScoreStyle, rightScoreStyle, matchHintStyle, pointStyle, effectStyle, winStyle;
         Texture2D panelTexture;
         Vector2 center, previous;
-        float halfWidth, halfHeight, serveRemaining=-1, clearRemaining=-1, animationTime;
+        float halfWidth, halfHeight, serveRemaining=-1, serveDuration, clearRemaining=-1, animationTime;
         int servingSide=-1;
         int lastPointWinner;
         bool configured, paused, inputReady=true, settingsOpen;
@@ -82,8 +82,8 @@ namespace Naispo.Interaction
         public bool InputReady => inputReady;
         public bool SettingsOpen => settingsOpen;
         public bool ExternalOverlayOpen { get; set; }
-        public string InputWaitTitle { get; set; } = "ふたりの準備を待っています";
-        public string InputWaitDetail { get; set; } = "両手をセンサーに見せると再開します";
+        public string InputWaitTitle { get; set; } = "準備中";
+        public string InputWaitDetail { get; set; } = "両手を見せてください";
         public bool WaitingToServe => serveRemaining >= 0;
         public bool CanAdvanceBall => configured && isActiveAndEnabled && inputReady && !paused && !settingsOpen && !ExternalOverlayOpen && serveRemaining<0 && clearRemaining<0 && (!IsVersus || !versus.Complete);
         public bool RoundComplete => progress.Complete;
@@ -279,7 +279,7 @@ namespace Naispo.Interaction
             ball.CancelBarrierImpact();
             ResetVersusRally();
             servingSide=IsVersus ? versus.NextServeSide : progress.TakeServeSide();
-            serveRemaining=delay;
+            serveRemaining=serveDuration=delay;
             Vector2 spawn=ServePosition(servingSide);
             ball.Body.position=spawn; ball.transform.position=new Vector3(spawn.x,spawn.y,ball.transform.position.z);
             ball.Body.linearVelocity=Vector2.zero; ball.Body.angularVelocity=0;
@@ -484,6 +484,9 @@ namespace Naispo.Interaction
             rightScoreStyle=new GUIStyle(scoreStyle) { alignment=TextAnchor.MiddleCenter,normal={textColor=PlayerColor(1)} };
             matchHintStyle=new GUIStyle(smallStyle) { alignment=TextAnchor.MiddleCenter };
             centeredStyle=new GUIStyle(titleStyle) { alignment=TextAnchor.MiddleCenter,fontSize=24 };
+            pointStyle=new GUIStyle(centeredStyle) { fontSize=21 };
+            effectStyle=new GUIStyle(matchHintStyle) { fontSize=15,normal={textColor=new Color(.88f,.74f,1)} };
+            winStyle=new GUIStyle(centeredStyle) { fontSize=36 };
             buttonStyle=new GUIStyle(GUI.skin.button) { font=GuiFont,fontSize=15,fontStyle=FontStyle.Bold };
             panelTexture=new Texture2D(1,1); panelTexture.SetPixel(0,0,new Color(.055f,.076f,.14f,.97f)); panelTexture.Apply();
         }
@@ -492,19 +495,100 @@ namespace Naispo.Interaction
         void DrawVersusHud()
         {
             GUI.DrawTexture(new Rect(440,8,400,94),panelTexture);
-            GUI.Label(new Rect(464,12,100,24),"左",matchHintStyle);
-            GUI.Label(new Rect(716,12,100,24),"右",matchHintStyle);
-            GUI.Label(new Rect(464,31,100,62),versus.LeftScore.ToString(),leftScoreStyle);
-            GUI.Label(new Rect(716,31,100,62),versus.RightScore.ToString(),rightScoreStyle);
-            GUI.Label(new Rect(590,27,100,35),"—",centeredStyle);
-            GUI.Label(new Rect(560,69,160,24),"3点先取",matchHintStyle);
-            if(versus.SoftenedSide!=0)
+            DrawPlayerScore(464,-1,versus.LeftScore,leftScoreStyle);
+            DrawPlayerScore(716,1,versus.RightScore,rightScoreStyle);
+            Fill(new Rect(637,38,6,6),new Color(.49f,.55f,.67f));
+            Fill(new Rect(637,56,6,6),new Color(.49f,.55f,.67f));
+        }
+
+        void DrawPlayerScore(float x,int side,int score,GUIStyle style)
+        {
+            Color color=PlayerColor(side);
+            float age=serveDuration-serveRemaining;
+            bool scored=lastPointWinner==side && WaitingToServe;
+            float pop=scored ? Mathf.Sin(Mathf.Clamp01(age/.65f)*Mathf.PI) : 0;
+            style.fontSize=Mathf.RoundToInt(52+pop*10);
+            GUI.Label(new Rect(x,12-pop*3,100,65),score.ToString(),style);
+            for(int i=0;i<RallyVersusState.PointsToWin;i++)
             {
-                Fill(new Rect(476,112,328,30),new Color(.21f,.10f,.34f,.95f));
-                GUI.Label(new Rect(476,114,328,26),$"{(versus.SoftenedSide<0 ? "左" : "右")}：次の返球 −25％",matchHintStyle);
+                Color pip=color; pip.a=i<score ? 1 : .18f;
+                Fill(new Rect(x+24+i*20,84,12,4),pip);
             }
-            else if(ItemVisible)
-                GUI.Label(new Rect(400,112,480,26),"紫の印を取ると、相手の次の返球が弱くなる",matchHintStyle);
+            if(scored && age<.85f)
+            {
+                color.a=Mathf.Clamp01(1-age/.85f);
+                pointStyle.normal.textColor=color;
+                GUI.Label(new Rect(x+78,26-age*16,45,32),"+1",pointStyle);
+            }
+            if(versus.SoftenedSide==side)
+            {
+                Fill(new Rect(x+6,110,88,32),new Color(.21f,.10f,.34f,.95f));
+                DrawSoftReturnGlyph(new Vector2(x+24,126),10,new Color(.79f,.57f,1));
+                GUI.Label(new Rect(x+38,112,52,28),"−25%",effectStyle);
+            }
+        }
+
+        static void Stroke(Vector2 from,Vector2 to,float thickness,Color color)
+        {
+            Vector2 delta=to-from;
+            Matrix4x4 old=GUI.matrix;
+            GUIUtility.RotateAroundPivot(Mathf.Atan2(delta.y,delta.x)*Mathf.Rad2Deg,from);
+            Fill(new Rect(from.x,from.y-thickness*.5f,delta.magnitude,thickness),color);
+            GUI.matrix=old;
+        }
+
+        static void DrawSoftReturnGlyph(Vector2 center,float radius,Color color)
+        {
+            Vector2 top=center+Vector2.down*radius, right=center+Vector2.right*radius;
+            Vector2 bottom=center+Vector2.up*radius, left=center+Vector2.left*radius;
+            Stroke(top,right,1.5f,color); Stroke(right,bottom,1.5f,color);
+            Stroke(bottom,left,1.5f,color); Stroke(left,top,1.5f,color);
+            for(int i=0;i<2;i++)
+            {
+                Vector2 middle=center+Vector2.up*(i*4-2);
+                Stroke(middle+new Vector2(-4,-2),middle+Vector2.up,1.5f,color);
+                Stroke(middle+Vector2.up,middle+new Vector2(4,-2),1.5f,color);
+            }
+        }
+
+        void DrawServeCue(float scale,Vector2 offset)
+        {
+            Vector3 screen=cameraView.WorldToScreenPoint(ball.transform.position);
+            Vector2 point=(new Vector2(screen.x,Screen.height-screen.y)-offset)/scale;
+            float progress=1-Mathf.Clamp01(serveRemaining/Mathf.Max(.01f,serveDuration));
+            Fill(new Rect(point.x-33,point.y+27,66,22),new Color(.055f,.076f,.14f,.92f));
+            for(int i=0;i<3;i++)
+            {
+                Color color=PlayerColor(servingSide);
+                color.a=Mathf.Lerp(.2f,1,Mathf.Clamp01(progress*3-i));
+                Fill(new Rect(point.x-21+i*16,point.y+35,10,5),color);
+            }
+        }
+
+        void DrawVictory()
+        {
+            float x=versus.Winner<0 ? 320 : 960;
+            Color color=PlayerColor(versus.Winner);
+            GUI.DrawTexture(new Rect(x-108,240,216,132),panelTexture);
+            Fill(new Rect(x-108,240,216,3),color);
+            // The crown and card sit on the winning player's own half of the court.
+            Vector2 a=new Vector2(x-22,279), b=new Vector2(x-17,301);
+            Stroke(a,b,3,color); Stroke(b,new Vector2(x+17,301),3,color);
+            Stroke(new Vector2(x+17,301),new Vector2(x+22,279),3,color);
+            Stroke(a,new Vector2(x-10,286),3,color);
+            Stroke(new Vector2(x-10,286),new Vector2(x,272),3,color);
+            Stroke(new Vector2(x,272),new Vector2(x+10,286),3,color);
+            Stroke(new Vector2(x+10,286),new Vector2(x+22,279),3,color);
+            winStyle.normal.textColor=color;
+            GUI.Label(new Rect(x-90,307,180,54),"WIN",winStyle);
+        }
+
+        void DrawRoundClear()
+        {
+            GUI.DrawTexture(new Rect(520,290,240,118),panelTexture);
+            GUI.DrawTexture(new Rect(558,307,44,44),coinTexture);
+            GUI.Label(new Rect(616,297,104,64),"+"+CoinsPerRound,scoreStyle);
+            GUI.Label(new Rect(540,371,200,24),$"累計 {TeamScore}",matchHintStyle);
         }
         static void Fill(Rect rect,Color color)
         {
@@ -540,32 +624,32 @@ namespace Naispo.Interaction
             }
             if(GUI.Button(new Rect(1063,19,83,35),paused ? "再開" : "一時停止",buttonStyle)) SetPaused(!paused);
             if(GUI.Button(new Rect(1155,19,94,35),"設定",buttonStyle)) { settingsOpen=!settingsOpen; ApplySimulationState(); }
-            if(GUI.Button(new Rect(1063,65,186,29),"はじめから",buttonStyle)) RestartGame();
+            if(GUI.Button(new Rect(1063,65,186,29),IsVersus && versus.Complete ? "もう一度" : "はじめから",buttonStyle)) RestartGame();
 
             if(settingsOpen) DrawSettings();
             else if(!inputReady) DrawMessage(InputWaitTitle,InputWaitDetail,new Color(.44f,.83f,.92f));
-            else if(paused) DrawMessage("ひとやすみ","「再開」で続けられます",new Color(.76f,.82f,.95f));
-            else if(IsVersus && versus.Complete) DrawMessage(versus.Winner<0 ? "左のプレイヤーの勝ち！" : "右のプレイヤーの勝ち！","「はじめから」で、もう一度対戦できます",PlayerColor(versus.Winner));
-            else if(IsVersus && lastPointWinner!=0 && serveRemaining>=0) DrawMessage(lastPointWinner<0 ? "左に1点" : "右に1点",$"{(servingSide<0 ? "左" : "右")}のプレイヤーから再開",PlayerColor(lastPointWinner));
-            else if(clearRemaining>=0) DrawMessage("星がそろった！",$"ここまで {TeamScore} 個。次の星を探そう",new Color(1,.8f,.34f));
-            else if(serveRemaining>=0)
+            else if(paused)
             {
-                string name=servingSide<0 ? "左のプレイヤー" : "右のプレイヤー";
-                GUI.Label(new Rect(350,125,580,32),$"{name}からスタート",new GUIStyle(centeredStyle) {fontSize=19,normal={textColor=servingSide<0 ? new Color(.36f,.91f,.96f) : new Color(1,.57f,.51f)}});
+                GUI.DrawTexture(new Rect(600,316,80,88),panelTexture);
+                Fill(new Rect(621,340,12,40),new Color(.76f,.82f,.95f));
+                Fill(new Rect(647,340,12,40),new Color(.76f,.82f,.95f));
             }
+            else if(IsVersus && versus.Complete) DrawVictory();
+            else if(clearRemaining>=0) DrawRoundClear();
+            else if(serveRemaining>=0) DrawServeCue(scale,offset);
             GUI.matrix=matrix;
         }
 
         void DrawMessage(string title,string detail,Color accent)
         {
-            GUI.DrawTexture(new Rect(362,280,556,132),panelTexture);
-            Fill(new Rect(362,280,4,132),accent);
-            GUI.Label(new Rect(380,301,520,44),title,centeredStyle);
-            GUI.Label(new Rect(380,355,520,31),detail,new GUIStyle(bodyStyle) {alignment=TextAnchor.MiddleCenter});
+            GUI.DrawTexture(new Rect(460,300,360,98),panelTexture);
+            Fill(new Rect(460,300,3,98),accent);
+            GUI.Label(new Rect(480,313,320,40),title,centeredStyle);
+            if(!string.IsNullOrEmpty(detail)) GUI.Label(new Rect(480,361,320,25),detail,matchHintStyle);
         }
         void DrawSettings()
         {
-            Fill(new Rect(0,110,1280,610),new Color(.015f,.025f,.06f,.72f));
+            Fill(new Rect(0,110,1280,510),new Color(.015f,.025f,.06f,.72f));
             GUI.DrawTexture(new Rect(380,100,520,504),panelTexture);
             GUI.Label(new Rect(414,120,420,40),"遊びやすさを調整",titleStyle);
             GUI.enabled=Mode!=RallyMode.StarCollection;
