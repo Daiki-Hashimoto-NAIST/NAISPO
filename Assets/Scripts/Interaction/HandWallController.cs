@@ -62,7 +62,7 @@ namespace Naispo.Interaction
                 lines[i].numCapVertices=garden ? 8 : 2;
                 lines[i].numCornerVertices=4;
                 var glow=walls[i].GetComponent<RallyBarrierGlow>();
-                if(glow==null&&garden)glow=walls[i].gameObject.AddComponent<RallyBarrierGlow>();
+                if(glow==null)glow=walls[i].gameObject.AddComponent<RallyBarrierGlow>();
                 if(glow!=null)glow.Configure(lines[i],garden);
             }
         }
@@ -187,7 +187,7 @@ namespace Naispo.Interaction
             owners[slot]=owner;active[slot]=true;
             barriers[slot].SetSpan(delta.magnitude,meters,thickness,reset);
             walls[slot].enabled=true;
-            lines[slot].startWidth=lines[slot].endWidth=thickness*(gardenPresentation ? .55f : 1);
+            lines[slot].startWidth=lines[slot].endWidth=thickness*(presentationSet ? (gardenPresentation ? .55f : .40f) : 1);
             lines[slot].enabled=true;
         }
         void Hide(int i)

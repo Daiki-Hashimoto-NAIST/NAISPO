@@ -34,8 +34,10 @@ namespace Naispo.Interaction
         GUISkin cameraSkin;
         Texture2D idleTexture,hoverTexture,pressedTexture,selectedTexture,fieldTexture,trackTexture;
         bool paletteInitialized,versusPalette;
+        bool stylePaletteInitialized,versusStylePalette;
+        Color cameraOverlayColor,cameraPanelColor;
         static readonly Color GardenBackground=new Color(.025f,.075f,.055f);
-        static readonly Color VersusBackground=new Color(.018f,.028f,.065f);
+        static readonly Color VersusBackground=new Color(.031f,.059f,.110f);
 
         void Awake()
         {
@@ -145,7 +147,7 @@ namespace Naispo.Interaction
 
         static Color PlayerColor(int slot,bool versus)
         {
-            if(versus)return slot==0 ? new Color(.25f,.88f,.94f) : new Color(1,.50f,.46f);
+            if(versus)return slot==0 ? new Color(.502f,.910f,.957f) : new Color(1,.698f,.549f);
             return slot==0 ? new Color(.64f,.94f,.80f) : new Color(.94f,.76f,.49f);
         }
 
@@ -158,7 +160,7 @@ namespace Naispo.Interaction
             {
                 var color=PlayerColor(slot,versus);
                 var settings=playerSettings[slot];
-                float silhouetteBrightness=versus ? .40f : .25f;
+                const float silhouetteBrightness=.25f;
                 // Reuse the three-slot palettes created with each player.
                 for(int index=0;index<settings.barrierColors.Length;index++)settings.barrierColors[index]=color;
                 for(int index=0;index<settings.personColors.Length;index++)
@@ -342,10 +344,12 @@ namespace Naispo.Interaction
             bool savedEnabled=GUI.enabled;
             GUI.enabled=true;
             GUI.skin=cameraSkin;
-            Fill(new Rect(0,0,1280,720),new Color(.014f,.037f,.026f,.94f));
-            Fill(new Rect(130,74,1020,604),new Color(.055f,.125f,.087f));
-            Fill(new Rect(130,74,60,1),new Color(.64f,.94f,.80f,.55f));
-            Fill(new Rect(1090,677,60,1),new Color(.94f,.76f,.49f,.4f));
+            Fill(new Rect(0,0,1280,720),cameraOverlayColor);
+            Fill(new Rect(130,74,1020,604),cameraPanelColor);
+            Color leftAccent=PlayerColor(0,Game.IsVersus),rightAccent=PlayerColor(1,Game.IsVersus);
+            leftAccent.a=.55f;rightAccent.a=.4f;
+            Fill(new Rect(130,74,60,1),leftAccent);
+            Fill(new Rect(1090,677,60,1),rightAccent);
             GUI.Label(new Rect(162,94,620,40),"カメラの設定",title);
             GUI.Label(new Rect(162,148,440,44),"空欄なら接続中の2台を自動設定します。\n番号を入力すると、そのカメラを指定できます。",small);
             GUI.Label(new Rect(162,203,114,30),"左のカメラ",label);
@@ -383,7 +387,7 @@ namespace Naispo.Interaction
 
         void EnsureStyles()
         {
-            if(label!=null)return;
+            if(label!=null) { RefreshStylePalette();return; }
             var ink=new Color(.94f,.95f,.86f);
             var dim=new Color(.59f,.69f,.62f);
             idleTexture=FlatTexture(new Color(.07f,.16f,.11f));
@@ -417,6 +421,43 @@ namespace Naispo.Interaction
             FlattenScrollStyle(cameraSkin.horizontalScrollbarThumb,trackTexture,hoverTexture,pressedTexture);
             FlattenScrollStyle(cameraSkin.horizontalScrollbarLeftButton,fieldTexture,hoverTexture,pressedTexture);
             FlattenScrollStyle(cameraSkin.horizontalScrollbarRightButton,fieldTexture,hoverTexture,pressedTexture);
+            RefreshStylePalette();
+        }
+
+        void RefreshStylePalette()
+        {
+            bool versus=Game!=null&&Game.IsVersus;
+            if(stylePaletteInitialized&&versusStylePalette==versus)return;
+            stylePaletteInitialized=true;versusStylePalette=versus;
+            Color ink=versus ? new Color(.929f,.961f,.984f) : new Color(.94f,.95f,.86f);
+            Color dim=versus ? new Color(.565f,.627f,.722f) : new Color(.59f,.69f,.62f);
+            Color selectedInk=versus ? new Color(.075f,.13f,.21f) : new Color(.07f,.16f,.11f);
+            cameraOverlayColor=versus ? new Color(.020f,.039f,.078f,.94f) : new Color(.014f,.037f,.026f,.94f);
+            cameraPanelColor=versus ? new Color(.078f,.125f,.20f) : new Color(.055f,.125f,.087f);
+            // Recolor the existing one-pixel surfaces only when the mode changes.
+            SetTextureColor(idleTexture,versus ? new Color(.078f,.125f,.20f) : new Color(.07f,.16f,.11f));
+            SetTextureColor(hoverTexture,versus ? new Color(.12f,.21f,.31f) : new Color(.13f,.25f,.18f));
+            SetTextureColor(pressedTexture,versus ? new Color(.18f,.30f,.42f) : new Color(.20f,.34f,.24f));
+            SetTextureColor(selectedTexture,versus ? new Color(.75f,.90f,.94f) : new Color(.79f,.88f,.74f));
+            SetTextureColor(fieldTexture,versus ? new Color(.047f,.086f,.149f) : new Color(.025f,.075f,.05f));
+            SetTextureColor(trackTexture,versus ? new Color(.19f,.27f,.38f) : new Color(.16f,.25f,.19f));
+            SetTextColor(label,ink);SetTextColor(title,ink);
+            SetTextColor(small,dim);SetTextColor(statusLabel,dim);
+            SetTextColor(button,ink);SetTextColor(field,ink);
+            SetTextColor(selectedButton,selectedInk);
+            selectedButton.active.textColor=selectedButton.onActive.textColor=ink;
+            cameraSkin.settings.cursorColor=ink;
+        }
+
+        static void SetTextureColor(Texture2D texture,Color color)
+        {
+            texture.SetPixel(0,0,color);texture.Apply();
+        }
+
+        static void SetTextColor(GUIStyle style,Color color)
+        {
+            style.normal.textColor=style.hover.textColor=style.active.textColor=style.focused.textColor=color;
+            style.onNormal.textColor=style.onHover.textColor=style.onActive.textColor=style.onFocused.textColor=color;
         }
 
         static Texture2D FlatTexture(Color color)

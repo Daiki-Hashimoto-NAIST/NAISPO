@@ -34,7 +34,6 @@ namespace Naispo.Interaction
 
             glowSprite = CreateSprite(CreateGlowTexture(), "Garden soft light");
             BuildGround(halfWidth, floorY, camera);
-            BuildFoliage(halfWidth, floorY, camera);
             BuildFireflies(halfWidth, floorY);
             scenery.SetActive(visible);
         }
@@ -108,75 +107,6 @@ namespace Naispo.Interaction
                 new Color(.94f, .77f, .52f, .055f), -65);
             rightPool.transform.localPosition = new Vector3(halfWidth * .52f, floorY - .025f, 0);
             rightPool.transform.localScale = new Vector3(2.2f, .19f, 1);
-        }
-
-        void BuildFoliage(float halfWidth, float floorY, Camera camera)
-        {
-            var vertices = new List<Vector3>(1800);
-            var colors = new List<Color>(1800);
-            var triangles = new List<int>(3600);
-            var random = new System.Random(8137);
-            Color stemColor = new Color(.30f, .44f, .29f, .36f);
-            Color leafColor = new Color(.27f, .40f, .27f, .32f);
-
-            for(int side = -1; side <= 1; side += 2)
-            {
-                for(int plant = 0; plant < 5; plant++)
-                {
-                    float x = side * halfWidth * (.79f + plant * .047f);
-                    float height = .34f + (float)random.NextDouble() * .67f;
-                    float lean = side * (.04f + (float)random.NextDouble() * .14f);
-                    Vector2 start = new Vector2(x, floorY - .035f);
-                    Vector2 control = start + new Vector2(-lean, height * .52f);
-                    Vector2 end = start + new Vector2(lean, height);
-                    AddStem(vertices, colors, triangles, start, control, end, .013f, stemColor);
-                    for(int leaf = 0; leaf < 4; leaf++)
-                    {
-                        float t = .26f + leaf * .18f;
-                        Vector2 root = Quadratic(start, control, end, t);
-                        float direction = (leaf % 2 == 0 ? -1 : 1) * side;
-                        Vector2 tip = root + new Vector2(direction * (.15f + height * .13f), .13f + height * .1f);
-                        AddLeaf(vertices, colors, triangles, root, tip, .054f + height * .02f, leafColor);
-                    }
-                }
-
-                // Broad, very dim foliage frames only the extreme upper corners.
-                float upperY = camera.transform.position.y + camera.orthographicSize;
-                for(int leaf = 0; leaf < 4; leaf++)
-                {
-                    Vector2 root = new Vector2(side * (halfWidth + .2f), upperY + .18f - leaf * .2f);
-                    Vector2 tip = root + new Vector2(-side * (.28f + leaf * .15f), -.35f - leaf * .12f);
-                    AddLeaf(vertices, colors, triangles, root, tip, .17f,
-                        new Color(.15f, .30f, .20f, .23f));
-                }
-            }
-
-            // Low blades sit below the floor line; none intrude into the central ball path.
-            for(int blade = 0; blade < 42; blade++)
-            {
-                float x = Mathf.Lerp(-halfWidth * .96f, halfWidth * .96f, blade / 41f);
-                if(Mathf.Abs(x) < .55f) continue;
-                Vector2 root = new Vector2(x, floorY - .13f);
-                float height = .07f + (float)random.NextDouble() * .11f;
-                Vector2 tip = root + new Vector2((float)random.NextDouble() * .12f - .06f, height);
-                AddLeaf(vertices, colors, triangles, root, tip, .017f,
-                    new Color(.24f, .36f, .25f, .22f));
-            }
-
-            var mesh = Own(new Mesh { name = "Garden edge foliage" });
-            mesh.SetVertices(vertices); mesh.SetColors(colors); mesh.SetTriangles(triangles, 0);
-            mesh.RecalculateBounds();
-            var material = Own(new Material(Shader.Find("Sprites/Default")) { name = "Garden foliage" });
-            var white = Own(new Texture2D(1, 1, TextureFormat.RGBA32, false) { name = "Garden foliage white" });
-            white.SetPixel(0, 0, Color.white); white.Apply(false, true);
-            material.mainTexture = white;
-            var foliage = CreateChild("Leaves at the garden edge", scenery.transform);
-            foliage.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var renderer = foliage.AddComponent<MeshRenderer>();
-            renderer.sharedMaterial = material;
-            renderer.sortingOrder = -58;
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
         }
 
         void BuildFireflies(float halfWidth, float floorY)
@@ -261,53 +191,6 @@ namespace Naispo.Interaction
             renderer.drawMode = SpriteDrawMode.Sliced;
             renderer.size = Vector2.one;
             return renderer;
-        }
-
-        static Vector2 Quadratic(Vector2 start, Vector2 control, Vector2 end, float t)
-        {
-            float inverse = 1 - t;
-            return inverse * inverse * start + 2 * inverse * t * control + t * t * end;
-        }
-
-        static void AddStem(List<Vector3> vertices, List<Color> colors, List<int> triangles,
-            Vector2 start, Vector2 control, Vector2 end, float width, Color color)
-        {
-            const int segments = 10;
-            int offset = vertices.Count;
-            for(int i = 0; i <= segments; i++)
-            {
-                float t = i / (float)segments;
-                Vector2 point = Quadratic(start, control, end, t);
-                Vector2 direction = ((1 - t) * (control - start) + t * (end - control)).normalized;
-                Vector2 normal = new Vector2(-direction.y, direction.x) * width * .5f;
-                vertices.Add(point - normal); colors.Add(color);
-                vertices.Add(point + normal); colors.Add(color);
-                if(i == 0) continue;
-                int a = offset + (i - 1) * 2;
-                triangles.Add(a); triangles.Add(a + 1); triangles.Add(a + 2);
-                triangles.Add(a + 2); triangles.Add(a + 1); triangles.Add(a + 3);
-            }
-        }
-
-        static void AddLeaf(List<Vector3> vertices, List<Color> colors, List<int> triangles,
-            Vector2 root, Vector2 tip, float width, Color color)
-        {
-            const int segments = 6;
-            int offset = vertices.Count;
-            Vector2 direction = tip - root;
-            Vector2 normal = new Vector2(-direction.y, direction.x).normalized;
-            for(int i = 0; i <= segments; i++)
-            {
-                float t = i / (float)segments;
-                Vector2 middle = Vector2.Lerp(root, tip, t) + normal * Mathf.Sin(t * Mathf.PI) * width * .17f;
-                float radius = Mathf.Sin(t * Mathf.PI) * width * .5f;
-                vertices.Add(middle - normal * radius); colors.Add(color);
-                vertices.Add(middle + normal * radius); colors.Add(color);
-                if(i == 0) continue;
-                int a = offset + (i - 1) * 2;
-                triangles.Add(a); triangles.Add(a + 1); triangles.Add(a + 2);
-                triangles.Add(a + 2); triangles.Add(a + 1); triangles.Add(a + 3);
-            }
         }
 
         GameObject CreateChild(string childName, Transform parent)

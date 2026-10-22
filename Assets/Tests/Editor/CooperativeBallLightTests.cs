@@ -71,6 +71,30 @@ namespace Naispo.Tests
         }
 
         [UnityTest]
+        public IEnumerator GlowStaysInsideTheRevealRadiusAndDistantStarsStayHiddenWhenResized()
+        {
+            game.SetPaused(true);
+            Vector2 target=Coin(4).transform.position;
+            foreach(float radius in new[] {.5f,1.8f,4f})
+            {
+                game.BallLightRadius=radius;
+                MoveBall(target+Vector2.up*(radius*.75f));
+                yield return TwoFrames();
+                Assert.That(IsVisible(Coin(4)),Is.True);
+                foreach(string name in new[] {"Ball light","Ball corona"})
+                {
+                    var renderer=game.transform.Find("Cooperative court/"+name).GetComponent<SpriteRenderer>();
+                    Assert.That(renderer.bounds.extents.x,Is.LessThanOrEqualTo(radius+.001f),
+                        "The glow must not suggest a wider reveal radius.");
+                    Assert.That(renderer.bounds.extents.y,Is.LessThanOrEqualTo(radius+.001f));
+                }
+                MoveBall(target+Vector2.up*(radius+.01f));
+                yield return TwoFrames();
+                AssertHidden(4,"A star just outside the radius must have no core or halo.");
+            }
+        }
+
+        [UnityTest]
         public IEnumerator LightOffBlocksStationaryAndSweptPickupsButLightOnCollectsFastCrossing()
         {
             game.BallLightEnabled = false;

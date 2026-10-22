@@ -38,15 +38,15 @@ namespace Naispo.Interaction
         void BuildVersusArtwork()
         {
             versusLeftFloor = Rectangle("Left match floor",new Vector2(center.x-halfWidth*.5f,MatchFloor),
-                new Vector2(halfWidth-.25f,.045f),new Color(.25f,.86f,.91f,.8f),2);
+                new Vector2(halfWidth-.25f,.022f),new Color(.502f,.910f,.957f,.48f),2);
             versusRightFloor = Rectangle("Right match floor",new Vector2(center.x+halfWidth*.5f,MatchFloor),
-                new Vector2(halfWidth-.25f,.045f),new Color(1,.46f,.40f,.8f),2);
+                new Vector2(halfWidth-.25f,.022f),new Color(1,.698f,.549f,.48f),2);
             versusItemRoot = CreateChild("Soft return item",arenaRoot.transform);
             var halo = CreateChild("Purple halo",versusItemRoot.transform);
             versusItemHalo = halo.AddComponent<SpriteRenderer>();
             versusItemHalo.sprite = haloSprite;
             versusItemHalo.sortingOrder = 6;
-            halo.transform.localScale = Vector3.one*1.8f;
+            halo.transform.localScale = Vector3.one*1.05f;
 
             // A diamond and downward chevrons remain distinct from the collectible stars.
             Vector2[] corners = {new Vector2(0,.34f),new Vector2(.34f,0),new Vector2(0,-.34f),new Vector2(-.34f,0)};
@@ -149,8 +149,8 @@ namespace Naispo.Interaction
             float fade = Mathf.Clamp01((ItemTelegraphSeconds+ItemAvailableSeconds-itemAge)/.45f);
             float alpha = Mathf.Lerp(.28f,1,arrival)*fade;
             versusItemRoot.transform.position = ItemPosition;
-            versusItemRoot.transform.localScale = Vector3.one*Mathf.Lerp(.65f,1,arrival)*pulse;
-            versusItemHalo.color = new Color(.65f,.29f,1,.42f*alpha);
+            versusItemRoot.transform.localScale = Vector3.one*Mathf.Lerp(.65f,1,arrival)*pulse*.84f;
+            versusItemHalo.color = new Color(.69f,.47f,1,.22f*alpha);
             for(int i=0;i<versusItemGlyph.Length;i++)
                 versusItemGlyph[i].color = i<4 ? new Color(.72f,.46f,1,alpha) : new Color(.95f,.83f,1,alpha);
         }

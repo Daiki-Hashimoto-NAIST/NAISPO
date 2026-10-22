@@ -5,8 +5,8 @@ namespace Naispo.Interaction
     public sealed partial class CooperativeCoinGame
     {
         RallyGardenWorld garden;
+        RallyCyberWorld cyber;
         SpriteRenderer[] courtArtwork;
-        Color[] originalCourtColors;
         Texture2D buttonNormal,buttonHover,buttonPressed;
         GUIStyle quietButtonStyle,sliderStyle,sliderThumbStyle;
 
@@ -14,19 +14,22 @@ namespace Naispo.Interaction
         {
             // Snapshot only the structural court, before balls, stars and items are added.
             courtArtwork=arenaRoot.GetComponentsInChildren<SpriteRenderer>();
-            originalCourtColors=new Color[courtArtwork.Length];
-            for(int i=0;i<courtArtwork.Length;i++)originalCourtColors[i]=courtArtwork[i].color;
             garden=CreateChild("Garden atmosphere",arenaRoot.transform).AddComponent<RallyGardenWorld>();
             garden.Initialize(halfWidth,ArenaFloor,cameraView);
+            cyber=CreateChild("Cyber arena atmosphere",arenaRoot.transform).AddComponent<RallyCyberWorld>();
+            cyber.Initialize(halfWidth,MatchFloor,cameraView);
             RefreshPresentation();
         }
         void RefreshPresentation()
         {
             if(garden!=null)garden.SetVisible(!IsVersus);
+            if(cyber!=null) { cyber.SetVisible(IsVersus);cyber.SetNet(ArenaFloor+netHeight,MatchFloor); }
             if(courtArtwork!=null)for(int i=0;i<courtArtwork.Length;i++)
             {
                 var view=courtArtwork[i];
-                if(IsVersus) { view.color=originalCourtColors[i];continue; }
+                // The arena supplies its own thin net and edge marks. Keep every
+                // existing collider transform intact when hiding the old artwork.
+                if(IsVersus) { view.color=Color.clear;continue; }
                 string name=view.name;
                 if(name.Contains("wash")||name=="Upper boundary") view.color=Color.clear;
                 else if(name.Contains("outer wall")) view.color=new Color(.23f,.38f,.29f,.28f);
@@ -45,6 +48,10 @@ namespace Naispo.Interaction
                 smallStyle.normal.textColor=goalStyle.normal.textColor=IsVersus ? new Color(.65f,.72f,.83f) : new Color(.59f,.70f,.63f);
                 leftScoreStyle.normal.textColor=PlayerColor(-1);
                 rightScoreStyle.normal.textColor=PlayerColor(1);
+                titleStyle.normal.textColor=bodyStyle.normal.textColor=centeredStyle.normal.textColor=
+                    IsVersus ? new Color(.90f,.95f,1) : new Color(.95f,.95f,.86f);
+                buttonStyle.normal.textColor=IsVersus ? new Color(.90f,.95f,1) : new Color(.89f,.94f,.87f);
+                quietButtonStyle.normal.textColor=IsVersus ? new Color(.60f,.70f,.79f) : new Color(.66f,.76f,.69f);
             }
         }
         static Texture2D SolidTexture(Color color)
@@ -90,7 +97,7 @@ namespace Naispo.Interaction
             { settingsOpen=true;ApplySimulationState(); }
             var pauseRect=new Rect(1136,682,44,34);
             if(GUI.Button(pauseRect,GUIContent.none,quietButtonStyle))SetPaused(!paused);
-            Color ink=new Color(.70f,.80f,.72f);
+            Color ink=IsVersus ? new Color(.65f,.75f,.84f) : new Color(.70f,.80f,.72f);
             if(paused)
             {
                 Stroke(new Vector2(1153,686),new Vector2(1165,694),2,ink);
@@ -112,10 +119,11 @@ namespace Naispo.Interaction
         }
         void DrawPauseMenu()
         {
-            Fill(new Rect(0,0,1280,720),new Color(.015f,.035f,.025f,.65f));
+            Fill(new Rect(0,0,1280,720),IsVersus ? new Color(.01f,.02f,.04f,.65f) : new Color(.015f,.035f,.025f,.65f));
             GUI.DrawTexture(new Rect(480,236,320,248),panelTexture);
-            Fill(new Rect(625,265,10,28),new Color(.75f,.84f,.72f));
-            Fill(new Rect(644,265,10,28),new Color(.75f,.84f,.72f));
+            Color pauseInk=IsVersus ? new Color(.75f,.85f,.94f) : new Color(.75f,.84f,.72f);
+            Fill(new Rect(625,265,10,28),pauseInk);
+            Fill(new Rect(644,265,10,28),pauseInk);
             if(GUI.Button(new Rect(512,319,256,42),"再開",buttonStyle))SetPaused(false);
             if(GUI.Button(new Rect(512,375,256,38),"はじめから",quietButtonStyle))RestartGame();
             if(GUI.Button(new Rect(512,423,256,38),"設定",quietButtonStyle))

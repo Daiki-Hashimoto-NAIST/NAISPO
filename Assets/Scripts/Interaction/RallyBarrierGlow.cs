@@ -15,8 +15,8 @@ namespace Naispo.Interaction
 
         public void Configure(LineRenderer line,bool garden)
         {
-            source=line; visible=garden;
-            if(material!=null)return;
+            source=line;visible=true;
+            if(material!=null) { ApplyTheme(garden);return; }
             material=new Material(Shader.Find("Sprites/Default"));
             outer=Layer("Soft ribbon halo",.25f,8);
             inner=Layer("Ribbon light",.16f,9);
@@ -34,6 +34,13 @@ namespace Naispo.Interaction
                 ends[i]=child.AddComponent<SpriteRenderer>();ends[i].sprite=orbSprite;
                 ends[i].sortingOrder=11;child.transform.localScale=Vector3.one*.42f;
             }
+            ApplyTheme(garden);
+        }
+        void ApplyTheme(bool garden)
+        {
+            outer.startWidth=outer.endWidth=garden?.25f:.16f;
+            inner.startWidth=inner.endWidth=garden?.16f:.10f;
+            for(int i=0;i<ends.Length;i++)ends[i].transform.localScale=Vector3.one*(garden?.42f:.30f);
         }
         LineRenderer Layer(string name,float width,int order)
         {

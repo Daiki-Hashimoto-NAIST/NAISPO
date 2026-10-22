@@ -62,8 +62,8 @@ namespace Naispo.Interaction
         BoxCollider2D net;
         Transform netCap;
         SpriteRenderer ballLight, ballCorona;
-        Sprite coinSprite, whiteSprite, haloSprite, lightSprite;
-        Texture2D coinTexture, whiteTexture, haloTexture, lightTexture;
+        Sprite coinSprite, whiteSprite, haloSprite, lightSprite, ballCoreSprite, originalBallSprite;
+        Texture2D coinTexture, whiteTexture, haloTexture, lightTexture, ballCoreTexture;
         PhysicsMaterial2D wallMaterial;
         GUIStyle titleStyle, bodyStyle, scoreStyle, goalStyle, buttonStyle, centeredStyle, smallStyle;
         GUIStyle leftScoreStyle, rightScoreStyle, matchHintStyle, pointStyle, effectStyle, winStyle, collectionCountStyle;
@@ -144,6 +144,7 @@ namespace Naispo.Interaction
             whiteTexture.SetPixel(0,0,Color.white); whiteTexture.Apply();
             whiteSprite=Sprite.Create(whiteTexture,new Rect(0,0,1,1),Vector2.one*0.5f,1);
             coinTexture=RallyStarArtwork.Create();
+            BuildBallCoreArtwork();
             haloTexture=new Texture2D(64,64,TextureFormat.RGBA32,false);
             lightTexture=new Texture2D(128,128,TextureFormat.RGBA32,false) { wrapMode=TextureWrapMode.Clamp };
             for(int y=0;y<64;y++) for(int x=0;x<64;x++)
@@ -156,12 +157,33 @@ namespace Naispo.Interaction
             for(int y=0;y<128;y++) for(int x=0;x<128;x++)
             {
                 float distance=Vector2.Distance(new Vector2(x,y),new Vector2(63.5f,63.5f))/64;
-                lightTexture.SetPixel(x,y,new Color(1,1,1,RevealAmount(distance,1)));
+                // Fall off toward the edge without drawing outside the reveal mask.
+                float radiance=Mathf.Pow(Mathf.Clamp01(1-distance),2)*RevealAmount(distance,1);
+                lightTexture.SetPixel(x,y,new Color(1,1,1,radiance));
             }
             lightTexture.Apply();
-            coinSprite=Sprite.Create(coinTexture,new Rect(0,0,coinTexture.width,coinTexture.height),Vector2.one*.5f,coinTexture.width/.64f);
+            coinSprite=Sprite.Create(coinTexture,new Rect(0,0,coinTexture.width,coinTexture.height),Vector2.one*.5f,coinTexture.width/.38f);
             haloSprite=Sprite.Create(haloTexture,new Rect(0,0,64,64),Vector2.one*.5f,64);
             lightSprite=Sprite.Create(lightTexture,new Rect(0,0,128,128),Vector2.one*.5f,128);
+        }
+
+        void BuildBallCoreArtwork()
+        {
+            const int size=96;
+            ballCoreTexture=new Texture2D(size,size,TextureFormat.RGBA32,false) {
+                name="Rally pearl core",wrapMode=TextureWrapMode.Clamp,filterMode=FilterMode.Bilinear
+            };
+            for(int y=0;y<size;y++)for(int x=0;x<size;x++)
+            {
+                float radius=Vector2.Distance(new Vector2(x+.5f,y+.5f),Vector2.one*(size*.5f))/(size*.46f);
+                float shade=Mathf.Lerp(1,.94f,Mathf.SmoothStep(0,1,radius));
+                float alpha=1-Mathf.SmoothStep(0,1,Mathf.InverseLerp(.975f,1,radius));
+                ballCoreTexture.SetPixel(x,y,new Color(shade,shade,shade,alpha));
+            }
+            ballCoreTexture.Apply();
+            // The visible rim keeps the existing .22 world-unit collision radius.
+            ballCoreSprite=Sprite.Create(ballCoreTexture,new Rect(0,0,size,size),Vector2.one*.5f,size/(.44f/.92f));
+            originalBallSprite=ballView.sprite;ballView.sprite=ballCoreSprite;
         }
 
         SpriteRenderer Rectangle(string name, Vector2 position, Vector2 size, Color color, int order)
@@ -227,6 +249,7 @@ namespace Naispo.Interaction
             net.transform.position=new Vector3(center.x,ArenaFloor+netHeight*.5f,0);
             net.transform.localScale=new Vector3(.18f,netHeight,1);
             netCap.position=new Vector3(center.x,ArenaFloor+netHeight,0);
+            if(cyber!=null)cyber.SetNet(ArenaFloor+netHeight,MatchFloor);
         }
 
         void BuildCoins()
@@ -237,8 +260,8 @@ namespace Naispo.Interaction
                 coins[i]=go.AddComponent<SpriteRenderer>(); coins[i].sprite=coinSprite; coins[i].sortingOrder=7;
                 var glow=CreateChild("Warm halo",go.transform);
                 glows[i]=glow.AddComponent<SpriteRenderer>(); glows[i].sprite=haloSprite;
-                glows[i].sortingOrder=6; glows[i].color=new Color(1,.71f,.2f,.35f);
-                glow.transform.localScale=Vector3.one*1.7f;
+                glows[i].sortingOrder=6; glows[i].color=new Color(1,.91f,.67f,.14f);
+                glow.transform.localScale=Vector3.one*.62f;
             }
         }
 
@@ -246,11 +269,11 @@ namespace Naispo.Interaction
         {
             ballLight=CreateChild("Ball light",arenaRoot.transform).AddComponent<SpriteRenderer>();
             ballLight.sprite=lightSprite; ballLight.sortingOrder=4;
-            ballLight.color=new Color(1,.84f,.50f,.17f);
+            ballLight.color=new Color(1,.94f,.74f,.014f);
             ballCorona=CreateChild("Ball corona",arenaRoot.transform).AddComponent<SpriteRenderer>();
             ballCorona.sprite=haloSprite; ballCorona.sortingOrder=8;
-            ballCorona.color=new Color(1,.89f,.58f,.85f);
-            ballCorona.transform.localScale=Vector3.one*1.5f;
+            ballCorona.color=IsVersus ? new Color(.73f,.88f,1,.30f) : new Color(1,.96f,.85f,.38f);
+            ballCorona.transform.localScale=Vector3.one*.82f;
         }
 
         public static Vector2 ParabolicCoinPosition(float t, int round, Vector2 courtCenter, float courtHalfWidth, float courtHalfHeight)
@@ -380,11 +403,12 @@ namespace Naispo.Interaction
             RefreshVersusArtwork();
         }
 
-        // Match the original light-coin game's full inner light and soft outer edge.
+        // A short fade inside the same radius makes the illuminated edge legible.
+        // This bounded mask is shared by the visible field and star visibility.
         public static float RevealAmount(float distance,float radius)
         {
             if(radius<=0) return 0;
-            return LightCoinGame.RevealAmount(distance,radius);
+            return 1-Mathf.SmoothStep(0,1,Mathf.InverseLerp(radius*.80f,radius,distance));
         }
 
         public float CoinVisibility(int index)
@@ -395,22 +419,23 @@ namespace Naispo.Interaction
 
         void RefreshLighting()
         {
-            ballLight.color=IsVersus ? new Color(1,.84f,.50f,.17f) : new Color(1,.87f,.60f,.065f);
-            ballCorona.color=IsVersus ? new Color(1,.89f,.58f,.85f) : new Color(1,.93f,.72f,.68f);
+            ballLight.color=new Color(1,.94f,.74f,.014f);
+            ballCorona.color=IsVersus ? new Color(.73f,.88f,1,.30f) : new Color(1,.96f,.85f,.38f);
             ballLight.transform.position=ball.transform.position;
             ballLight.transform.localScale=Vector3.one*(ballLightRadius*2);
             ballCorona.transform.position=ball.transform.position;
-            ballLight.enabled=ballCorona.enabled=ballLightEnabled && ballView.enabled;
+            ballLight.enabled=ballLightEnabled && ballView.enabled && !IsVersus;
+            ballCorona.enabled=ballLightEnabled && ballView.enabled;
             for(int i=0;i<CoinsPerRound;i++)
             {
                 float fade=pickupAges[i]>=0 ? Mathf.Clamp01(1-pickupAges[i]/.35f) : 1;
                 float alpha=CoinVisibility(i)*fade;
                 coins[i].enabled=glows[i].enabled=alpha>.001f;
                 coins[i].color=new Color(1,1,1,alpha);
-                glows[i].color=new Color(1,.76f,.25f,alpha*(pickupAges[i]>=0 ? .55f : .32f));
+                glows[i].color=new Color(1,.91f,.67f,alpha*(pickupAges[i]>=0 ? .26f : .14f));
             }
-            if(serveRemaining>=0) ballView.color=new Color(1,1,1,.65f+.35f*Mathf.Sin(animationTime*5)*Mathf.Sin(animationTime*5));
-            else ballView.color=Color.white;
+            float coreAlpha=serveRemaining>=0 ? .75f+.25f*Mathf.Pow(Mathf.Sin(animationTime*5),2) : 1;
+            ballView.color=IsVersus ? new Color(.90f,.97f,1,coreAlpha) : new Color(1,.995f,.96f,coreAlpha);
         }
 
         public static bool SweptHit(Vector2 from,Vector2 to,Vector2 coin,float radius)
@@ -494,7 +519,7 @@ namespace Naispo.Interaction
             panelTexture=new Texture2D(1,1); panelTexture.SetPixel(0,0,new Color(.055f,.076f,.14f,.97f)); panelTexture.Apply();
             BuildControlStyles();
         }
-        Color PlayerColor(int side) => IsVersus ? (side<0 ? new Color(.36f,.91f,.96f) : new Color(1,.57f,.51f))
+        Color PlayerColor(int side) => IsVersus ? (side<0 ? new Color(.502f,.910f,.957f) : new Color(1,.698f,.549f))
             : (side<0 ? new Color(.64f,.94f,.80f) : new Color(.94f,.76f,.49f));
 
         void DrawCollectionHud()
@@ -525,11 +550,9 @@ namespace Naispo.Interaction
 
         void DrawVersusHud()
         {
-            GUI.DrawTexture(new Rect(440,8,400,94),panelTexture);
-            DrawPlayerScore(464,-1,versus.LeftScore,leftScoreStyle);
-            DrawPlayerScore(716,1,versus.RightScore,rightScoreStyle);
-            Fill(new Rect(637,38,6,6),new Color(.49f,.55f,.67f));
-            Fill(new Rect(637,56,6,6),new Color(.49f,.55f,.67f));
+            DrawPlayerScore(508,-1,versus.LeftScore,leftScoreStyle);
+            DrawPlayerScore(672,1,versus.RightScore,rightScoreStyle);
+            Fill(new Rect(631,78,18,1),new Color(.49f,.59f,.68f,.65f));
         }
 
         void DrawPlayerScore(float x,int side,int score,GUIStyle style)
@@ -539,23 +562,22 @@ namespace Naispo.Interaction
             bool scored=lastPointWinner==side && WaitingToServe;
             float pop=scored ? Mathf.Sin(Mathf.Clamp01(age/.65f)*Mathf.PI) : 0;
             style.fontSize=Mathf.RoundToInt(52+pop*10);
-            GUI.Label(new Rect(x,12-pop*3,100,65),score.ToString(),style);
+            GUI.Label(new Rect(x,42-pop*3,100,72),score.ToString(),style);
             for(int i=0;i<RallyVersusState.PointsToWin;i++)
             {
                 Color pip=color; pip.a=i<score ? 1 : .18f;
-                Fill(new Rect(x+24+i*20,84,12,4),pip);
+                Fill(new Rect(x+32+i*14,126,6,6),pip);
             }
             if(scored && age<.85f)
             {
                 color.a=Mathf.Clamp01(1-age/.85f);
                 pointStyle.normal.textColor=color;
-                GUI.Label(new Rect(x+78,26-age*16,45,32),"+1",pointStyle);
+                GUI.Label(new Rect(x+78,56-age*16,45,32),"+1",pointStyle);
             }
             if(versus.SoftenedSide==side)
             {
-                Fill(new Rect(x+6,110,88,32),new Color(.21f,.10f,.34f,.95f));
-                DrawSoftReturnGlyph(new Vector2(x+24,126),10,new Color(.79f,.57f,1));
-                GUI.Label(new Rect(x+38,112,52,28),"−25%",effectStyle);
+                DrawSoftReturnGlyph(new Vector2(x+24,163),9,new Color(.79f,.64f,1));
+                GUI.Label(new Rect(x+38,149,52,28),"−25%",effectStyle);
             }
         }
 
@@ -599,9 +621,7 @@ namespace Naispo.Interaction
         {
             float x=versus.Winner<0 ? 320 : 960;
             Color color=PlayerColor(versus.Winner);
-            GUI.DrawTexture(new Rect(x-108,240,216,132),panelTexture);
-            Fill(new Rect(x-108,240,216,3),color);
-            // The crown and card sit on the winning player's own half of the court.
+            // The crown sits on the winning player's own half of the court.
             Vector2 a=new Vector2(x-22,279), b=new Vector2(x-17,301);
             Stroke(a,b,3,color); Stroke(b,new Vector2(x+17,301),3,color);
             Stroke(new Vector2(x+17,301),new Vector2(x+22,279),3,color);
@@ -658,7 +678,7 @@ namespace Naispo.Interaction
         }
         void DrawSettings()
         {
-            Fill(new Rect(0,0,1280,720),new Color(.015f,.035f,.025f,.82f));
+            Fill(new Rect(0,0,1280,720),IsVersus ? new Color(.01f,.02f,.04f,.82f) : new Color(.015f,.035f,.025f,.82f));
             GUI.DrawTexture(new Rect(380,64,520,584),panelTexture);
             GUI.Label(new Rect(414,82,420,40),"設定",titleStyle);
             GUI.enabled=Mode!=RallyMode.StarCollection;
@@ -692,6 +712,8 @@ namespace Naispo.Interaction
             if(ball != null && ball.CooperativeGame==this) ball.CooperativeGame=null;
             CleanupVersusArtwork();
             CleanupGardenPresentation();
+            if(ballView!=null&&ballView.sprite==ballCoreSprite)ballView.sprite=originalBallSprite;
+            Release(ballCoreSprite); Release(ballCoreTexture);
             Release(arenaRoot); Release(coinSprite); Release(whiteSprite); Release(haloSprite); Release(lightSprite);
             Release(coinTexture); Release(whiteTexture); Release(haloTexture); Release(lightTexture); Release(panelTexture);
             Release(wallMaterial);
