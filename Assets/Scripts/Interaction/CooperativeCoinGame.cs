@@ -66,7 +66,7 @@ namespace Naispo.Interaction
         Texture2D coinTexture, whiteTexture, haloTexture, lightTexture;
         PhysicsMaterial2D wallMaterial;
         GUIStyle titleStyle, bodyStyle, scoreStyle, goalStyle, buttonStyle, centeredStyle, smallStyle;
-        GUIStyle leftScoreStyle, rightScoreStyle, matchHintStyle, pointStyle, effectStyle, winStyle;
+        GUIStyle leftScoreStyle, rightScoreStyle, matchHintStyle, pointStyle, effectStyle, winStyle, collectionCountStyle;
         Texture2D panelTexture;
         Vector2 center, previous;
         float halfWidth, halfHeight, serveRemaining=-1, serveDuration, clearRemaining=-1, animationTime;
@@ -480,6 +480,8 @@ namespace Naispo.Interaction
             smallStyle=new GUIStyle(bodyStyle) { fontSize=13,normal={textColor=new Color(.65f,.72f,.83f)} };
             scoreStyle=new GUIStyle(titleStyle) { fontSize=52,alignment=TextAnchor.MiddleLeft,padding=new RectOffset(0,0,0,0),normal={textColor=new Color(1,.95f,.78f)} };
             goalStyle=new GUIStyle(bodyStyle) { fontSize=26,alignment=TextAnchor.MiddleLeft,padding=new RectOffset(0,0,0,0),normal={textColor=new Color(.64f,.69f,.81f)} };
+            collectionCountStyle=new GUIStyle(scoreStyle) { fontSize=48,wordWrap=false,clipping=TextClipping.Clip,contentOffset=Vector2.zero };
+            goalStyle.wordWrap=false;
             leftScoreStyle=new GUIStyle(scoreStyle) { alignment=TextAnchor.MiddleCenter,normal={textColor=PlayerColor(-1)} };
             rightScoreStyle=new GUIStyle(scoreStyle) { alignment=TextAnchor.MiddleCenter,normal={textColor=PlayerColor(1)} };
             matchHintStyle=new GUIStyle(smallStyle) { alignment=TextAnchor.MiddleCenter };
@@ -491,6 +493,33 @@ namespace Naispo.Interaction
             panelTexture=new Texture2D(1,1); panelTexture.SetPixel(0,0,new Color(.055f,.076f,.14f,.97f)); panelTexture.Apply();
         }
         static Color PlayerColor(int side) => side<0 ? new Color(.36f,.91f,.96f) : new Color(1,.57f,.51f);
+
+        void DrawCollectionHud()
+        {
+            // Give every glyph a full line box and a little horizontal slack. A label
+            // exactly as wide as CalcSize can wrap after GUI scaling and rise above the card.
+            string count=CollectedCount.ToString(), goal=$"/ {CoinsPerRound}";
+            Vector2 countSize=collectionCountStyle.CalcSize(new GUIContent(count));
+            float countWidth=Mathf.Max(48,countSize.x+12);
+            float goalWidth=goalStyle.CalcSize(new GUIContent(goal)).x+12;
+            float rowHeight=Mathf.Max(64,countSize.y+8);
+            float cardHeight=rowHeight+40;
+            var card=new Rect(486,18,308,cardHeight);
+            GUI.BeginGroup(card);
+            GUI.DrawTexture(new Rect(0,0,card.width,cardHeight),panelTexture);
+            float start=(card.width-(32+12+countWidth+8+goalWidth))*.5f;
+            GUI.DrawTexture(new Rect(start,10+(rowHeight-32)*.5f,32,32),coinTexture);
+            GUI.Label(new Rect(start+44,10,countWidth,rowHeight),count,collectionCountStyle);
+            GUI.Label(new Rect(start+52+countWidth,10,goalWidth,rowHeight),goal,goalStyle);
+            for(int i=0;i<CoinsPerRound;i++)
+            {
+                Color old=GUI.color;
+                GUI.color=i<CollectedCount ? Color.white : new Color(.36f,.39f,.48f,.6f);
+                GUI.DrawTexture(new Rect(50+i*24,rowHeight+16,16,16),coinTexture);
+                GUI.color=old;
+            }
+            GUI.EndGroup();
+        }
 
         void DrawVersusHud()
         {
@@ -603,25 +632,7 @@ namespace Naispo.Interaction
             Vector2 offset=new Vector2((Screen.width-1280*scale)*.5f,(Screen.height-720*scale)*.5f);
             GUI.matrix=Matrix4x4.TRS(offset,Quaternion.identity,new Vector3(scale,scale,1));
             if(IsVersus) DrawVersusHud();
-            else {
-            // Only the current objective stays prominent during play. The running
-            // total belongs in the round-complete message, away from this counter.
-            GUI.DrawTexture(new Rect(486,8,308,94),panelTexture);
-            string count=CollectedCount.ToString(), goal=$"/ {CoinsPerRound}";
-            float countWidth=scoreStyle.CalcSize(new GUIContent(count)).x;
-            float goalWidth=goalStyle.CalcSize(new GUIContent(goal)).x;
-            float start=640-(32+12+countWidth+8+goalWidth)*.5f;
-            GUI.DrawTexture(new Rect(start,25,32,32),coinTexture);
-            GUI.Label(new Rect(start+44,6,countWidth,66),count,scoreStyle);
-            GUI.Label(new Rect(start+52+countWidth,28,goalWidth,34),goal,goalStyle);
-            for(int i=0;i<CoinsPerRound;i++)
-            {
-                Color tint=GUI.color;
-                GUI.color=i<CollectedCount ? Color.white : new Color(.36f,.39f,.48f,.6f);
-                GUI.DrawTexture(new Rect(536+i*24,76,16,16),coinTexture);
-                GUI.color=tint;
-            }
-            }
+            else DrawCollectionHud();
             if(GUI.Button(new Rect(1063,19,83,35),paused ? "再開" : "一時停止",buttonStyle)) SetPaused(!paused);
             if(GUI.Button(new Rect(1155,19,94,35),"設定",buttonStyle)) { settingsOpen=!settingsOpen; ApplySimulationState(); }
             if(GUI.Button(new Rect(1063,65,186,29),IsVersus && versus.Complete ? "もう一度" : "はじめから",buttonStyle)) RestartGame();
