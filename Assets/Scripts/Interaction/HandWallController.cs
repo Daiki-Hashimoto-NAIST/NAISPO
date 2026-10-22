@@ -6,6 +6,7 @@ using Naispo.Silhouette;
 namespace Naispo.Interaction
 {
     // One independent wall per persistent person ID; never connect different people.
+    [DefaultExecutionOrder(-600)]
     public sealed class HandWallController : MonoBehaviour
     {
         public float thickness = 0.16f;
@@ -17,6 +18,20 @@ namespace Naispo.Interaction
         readonly Texture2D[] textures = new Texture2D[3];
         readonly uint[] owners = new uint[3];
         readonly bool[] active = new bool[3];
+        readonly HandPoseStabilizer[] stabilized = {new HandPoseStabilizer(),new HandPoseStabilizer(),new HandPoseStabilizer()};
+        BodyTrackingSource lastSource;
+        int lastGeneration=-1,lastMapRevision=-1;
+        bool stabilizeTracking;
+        [Min(0)] public float trackingGraceSeconds=.25f;
+        [Min(0)] public float recoverySeconds=.20f;
+        public bool StabilizeTracking
+        {
+            get=>stabilizeTracking;
+            set { if(stabilizeTracking==value)return;stabilizeTracking=value;ResetTracking(); }
+        }
+        public bool HasUsableWall => isActiveAndEnabled&&active[0]&&walls[0]!=null&&walls[0].enabled;
+        public bool HoldingLastPose => stabilizeTracking&&stabilized[0].Holding;
+        public bool AcquiringHands => stabilizeTracking&&stabilized[0].Acquiring;
         public EdgeCollider2D Wall(int slot) => walls[slot];
 
         void Start()
@@ -57,7 +72,46 @@ namespace Naispo.Interaction
         void FixedUpdate()
         {
             if (manager == null) return;
-            Apply(manager.CurrentFrame, manager.Registry, manager.mapper, manager.IsFresh && manager.useHandWalls);
+            if(stabilizeTracking)ApplyStabilized(Time.unscaledTimeAsDouble);
+            else Apply(manager.CurrentFrame, manager.Registry, manager.mapper, manager.IsFresh && manager.useHandWalls);
+        }
+
+        void ApplyStabilized(double now)
+        {
+            var source=manager.source;
+            if(!manager.isActiveAndEnabled||!manager.useHandWalls||source==null||!source.isActiveAndEnabled||!source.WorkerAlive||source.HasFailed||source.IsReconfiguring)
+            { ResetTracking();return; }
+            if(source!=lastSource||source.CaptureGeneration!=lastGeneration||manager.mapper.Revision!=lastMapRevision)
+            {
+                ResetTracking();lastSource=source;lastGeneration=source.CaptureGeneration;lastMapRevision=manager.mapper.Revision;
+            }
+            var frame=manager.CurrentFrame;
+            for(int slot=0;slot<3;slot++)
+            {
+                int index=-1;
+                if(frame!=null)for(int i=0;i<frame.BodyCount;i++)
+                    if(manager.Registry.BodyIndexToSlot[i]==slot) { index=i;break; }
+                Vector2 left=default,right=default;
+                bool valid=manager.IsFresh&&index>=0&&TryEndpoints(frame.Hands[index],manager.mapper,out left,out right);
+                var filtered=stabilized[slot];
+                filtered.Observe(manager.FrameRevision,index>=0 ? frame.BodyIds[index] : (uint?)null,valid,left,right,
+                    index>=0?frame.Hands[index].SeparationMeters:0,manager.LastFrameReceivedAt,now,trackingGraceSeconds,recoverySeconds);
+                if(!filtered.Ready) { Hide(slot);continue; }
+                if(filtered.Holding)
+                {
+                    // Keep the actual last applied pose, with no continuing kinematic impulse.
+                    walls[slot].attachedRigidbody.linearVelocity=Vector2.zero;
+                    walls[slot].attachedRigidbody.angularVelocity=0;
+                    continue;
+                }
+                ApplyPose(slot,filtered.Left,filtered.Right,filtered.SeparationMeters,filtered.Owner);
+            }
+        }
+
+        public void ResetTracking()
+        {
+            for(int slot=0;slot<3;slot++) { stabilized[slot].Reset();Hide(slot); }
+            lastSource=null;lastGeneration=lastMapRevision=-1;
         }
 
         public static bool TryEndpoints(BodyFrameData.HandPair hands, KinectViewportMapper mapper, out Vector2 left, out Vector2 right)
@@ -83,19 +137,22 @@ namespace Naispo.Interaction
                         if (registry.BodyIndexToSlot[i] == slot) { index = i; break; }
                 if (index < 0 || !TryEndpoints(frame.Hands[index], mapper, out var left, out var right))
                 { Hide(slot); continue; }
-                var delta = right-left;
-                var center = (left+right)*0.5f;
-                float angle = Mathf.Atan2(delta.y, delta.x)*Mathf.Rad2Deg;
-                var body = walls[slot].attachedRigidbody;
-                bool reset = !active[slot] || owners[slot] != frame.BodyIds[index] || (body.position-center).sqrMagnitude > 4;
-                if (reset) { body.position = center; body.rotation = angle; }
-                else { body.MovePosition(center); body.MoveRotation(angle); }
-                owners[slot] = frame.BodyIds[index]; active[slot] = true;
-                barriers[slot].SetSpan(delta.magnitude, frame.Hands[index].SeparationMeters, thickness, reset);
-                walls[slot].enabled = true;
-                lines[slot].startWidth = lines[slot].endWidth = thickness;
-                lines[slot].enabled = true;
+                ApplyPose(slot,left,right,frame.Hands[index].SeparationMeters,frame.BodyIds[index]);
             }
+        }
+        void ApplyPose(int slot,Vector2 left,Vector2 right,float meters,uint owner)
+        {
+            var delta=right-left;var center=(left+right)*.5f;
+            float angle=Mathf.Atan2(delta.y,delta.x)*Mathf.Rad2Deg;
+            var body=walls[slot].attachedRigidbody;
+            bool reset=!active[slot]||owners[slot]!=owner||(body.position-center).sqrMagnitude>4;
+            if(reset) { body.position=center;body.rotation=angle; }
+            else { body.MovePosition(center);body.MoveRotation(angle); }
+            owners[slot]=owner;active[slot]=true;
+            barriers[slot].SetSpan(delta.magnitude,meters,thickness,reset);
+            walls[slot].enabled=true;
+            lines[slot].startWidth=lines[slot].endWidth=thickness;
+            lines[slot].enabled=true;
         }
         void Hide(int i)
         {
@@ -106,7 +163,7 @@ namespace Naispo.Interaction
             walls[i].attachedRigidbody.linearVelocity = Vector2.zero;
             walls[i].attachedRigidbody.angularVelocity = 0;
         }
-        void OnDisable() { for (int i=0;i<3;i++) Hide(i); }
+        void OnDisable() { ResetTracking(); }
         void OnDestroy()
         {
             for(int i=0;i<3;i++)

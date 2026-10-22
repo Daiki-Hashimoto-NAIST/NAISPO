@@ -82,6 +82,7 @@ namespace Naispo.Interaction
         public string InputWaitTitle { get; set; } = "ふたりの準備を待っています";
         public string InputWaitDetail { get; set; } = "両手をセンサーに見せると再開します";
         public bool WaitingToServe => serveRemaining >= 0;
+        public bool CanAdvanceBall => configured && isActiveAndEnabled && inputReady && !paused && !settingsOpen && serveRemaining<0 && clearRemaining<0;
         public bool RoundComplete => progress.Complete;
         public float ArenaFloor => center.y-halfHeight+0.6f;
         public float HalfWidth => halfWidth;
@@ -280,6 +281,7 @@ namespace Naispo.Interaction
 
         void BeginServe(float delay)
         {
+            ball.CancelBarrierImpact();
             servingSide=progress.TakeServeSide();
             serveRemaining=delay;
             Vector2 spawn=ServePosition(servingSide);
@@ -299,7 +301,7 @@ namespace Naispo.Interaction
         public void SetPaused(bool value) { paused=value; ApplySimulationState(); }
         void ApplySimulationState()
         {
-            if(ball != null) ball.Body.simulated=configured && inputReady && !paused && !settingsOpen && serveRemaining<0 && clearRemaining<0;
+            if(ball != null) ball.SetGameplaySimulation(CanAdvanceBall);
         }
         public void RestartGame()
         {
@@ -502,8 +504,16 @@ namespace Naispo.Interaction
             if(GUI.Button(new Rect(414,544,452,36),"ゲームに戻る",buttonStyle)) { settingsOpen=false; ApplySimulationState(); }
         }
 
+        void OnEnable() { if(configured) ApplySimulationState(); }
+        void OnDisable()
+        {
+            if(ball==null) return;
+            ball.CancelBarrierImpact();
+            ball.SetGameplaySimulation(false);
+        }
         void OnDestroy()
         {
+            if(ball != null) ball.CancelBarrierImpact();
             if(ball != null && ball.CooperativeGame==this) ball.CooperativeGame=null;
             Release(arenaRoot); Release(coinSprite); Release(whiteSprite); Release(haloSprite); Release(lightSprite);
             Release(coinTexture); Release(whiteTexture); Release(haloTexture); Release(lightTexture); Release(panelTexture);

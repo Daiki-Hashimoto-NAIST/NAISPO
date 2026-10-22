@@ -24,6 +24,7 @@ namespace Naispo.Interaction
         readonly CooperativeDemoSource[] demos=new CooperativeDemoSource[2];
         readonly KinectPipeReceiver[] receivers=new KinectPipeReceiver[2];
         readonly KinectSettings[] playerSettings=new KinectSettings[2];
+        readonly HandWallController[] handWalls=new HandWallController[2];
         MultiKinectSettings sensorSettings;
         string leftSerial,rightSerial;
         float minimumDistance,maximumDistance;
@@ -96,6 +97,7 @@ namespace Naispo.Interaction
             colliders.enabled=false;colliders.settings=settings;colliders.mapper=mapper;colliders.manager=manager;
             manager.colliderController=colliders;manager.source=demo;manager.useHandWalls=true;
             Players[slot]=manager;root.SetActive(true);
+            handWalls[slot]=root.GetComponent<HandWallController>();
         }
 
         void Start()
@@ -130,9 +132,17 @@ namespace Naispo.Interaction
             gameCamera.backgroundColor=new Color(.018f,.028f,.065f);
         }
 
+        // Hand walls run at -600, then this -500 gate runs before ball physics.
+        // A wall expiry and the ball pause must occur in the same physics tick.
+        void FixedUpdate()
+        {
+            if(Game!=null)Game.SetInputReady((!SensorMode||BothPlayersReady)&&!SensorSettingsOpen);
+        }
+
         bool Ready(int slot)
         {
             var manager=Players[slot];
+            if(SensorMode)return manager!=null&&manager.isActiveAndEnabled&&handWalls[slot]!=null&&handWalls[slot].HasUsableWall;
             if(manager==null||!manager.IsFresh)return false;
             var frame=manager.CurrentFrame;
             return frame!=null&&frame.BodyCount>0&&
@@ -146,11 +156,12 @@ namespace Naispo.Interaction
             if(Sensors.StartupState==KinectStartupState.Error)return Sensors.LifecycleStatus;
             var receiver=receivers[slot];
             if(receiver.HasFailed)return "受信エラー: "+receiver.Status;
-            if(Ready(slot))return "認識中";
+            if(Ready(slot))return handWalls[slot].HoldingLastPose ? "手の位置を短く保持中" : "認識中";
             if(!receiver.isActiveAndEnabled)return "カメラの接続を確認中";
             if(!receiver.Connected)return "カメラの起動待ち";
             if(receiver.ReceivedFrames==0)return "人体認識を初期化中";
             if(!Players[slot].IsFresh)return "データが途切れています";
+            if(handWalls[slot].AcquiringHands)return "手の認識の安定を確認中";
             string handStatus=KinectHandFrameAdapter.DescribeReadiness(receiver.LatestMetadata);
             return string.IsNullOrEmpty(handStatus)?"両手を少し離してください":handStatus;
         }
@@ -181,6 +192,7 @@ namespace Naispo.Interaction
         {
             Sensors.StopWorkers();Sensors.enabled=false;SensorMode=false;
             for(int i=0;i<2;i++) {
+                handWalls[i].ResetTracking();handWalls[i].StabilizeTracking=false;
                 Players[i].enabled=false;receivers[i].enabled=false;demos[i].enabled=true;
                 playerSettings[i].mirrorX=false;Players[i].source=demos[i];Players[i].enabled=true;
             }
@@ -191,6 +203,7 @@ namespace Naispo.Interaction
         {
             Sensors.StopWorkers();Sensors.enabled=false;ApplySensorSettings();
             for(int i=0;i<2;i++) {
+                handWalls[i].ResetTracking();handWalls[i].StabilizeTracking=true;
                 Players[i].enabled=false;demos[i].enabled=false;
                 playerSettings[i].mirrorX=true;Players[i].source=receivers[i];Players[i].enabled=true;
             }

@@ -24,6 +24,8 @@ namespace Naispo.Core
         }
         public BodyColorRegistry Registry { get; } = new BodyColorRegistry();
         public BodyFrameData CurrentFrame => current;
+        public long FrameRevision { get; private set; }
+        public double LastFrameReceivedAt => lastFrameTime;
         public bool IsFresh => hasFrame && source != null && source.isActiveAndEnabled && !source.HasFailed &&
             settings != null && Time.unscaledTimeAsDouble - lastFrameTime <= settings.staleFrameTimeout;
         BodyFrameData current = new BodyFrameData();
@@ -50,7 +52,7 @@ namespace Naispo.Core
                 if (previousGeneration != source.CaptureGeneration)
                     Registry.Update(null, now, settings.maximumBodyCount, 0);
                 previousGeneration = source.CaptureGeneration;
-                hasFrame = true; lastFrameTime = now;
+                hasFrame = true; lastFrameTime = now; FrameRevision++;
                 Registry.Update(current, now, settings.maximumBodyCount, settings.bodyLostTimeout);
                 mapper.Refresh(current.Width, current.Height);
                 silhouetteRenderer.Apply(current, Registry);

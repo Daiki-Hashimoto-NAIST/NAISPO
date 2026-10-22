@@ -12,7 +12,12 @@ namespace Naispo.Interaction
         public Rigidbody2D Body {get;private set;}
         public bool GravityGame { get; set; }
         public CooperativeCoinGame CooperativeGame { get; set; }
+        public bool IsInBarrierImpact => impactOwner != null;
         PhysicsMaterial2D runtimeMaterial;
+        ElasticBarrier impactOwner, previousImpact;
+        RigidbodyInterpolation2D freeInterpolation;
+        bool gameplaySimulation = true;
+        float impactCooldown;
         void Awake()
         {
             Body=GetComponent<Rigidbody2D>();
@@ -26,6 +31,40 @@ namespace Naispo.Interaction
         }
         void FixedUpdate()
         { if(Body.linearVelocity.sqrMagnitude>maximumSpeed*maximumSpeed)Body.linearVelocity=Body.linearVelocity.normalized*maximumSpeed; }
+
+        // The game and the impact each own one reason to suspend the same body.
+        // Neither may accidentally resume physics while the other is still paused.
+        public void SetGameplaySimulation(bool running)
+        {
+            gameplaySimulation=running;
+            if(Body != null) Body.simulated=running && isActiveAndEnabled && !IsInBarrierImpact;
+        }
+        internal bool BeginBarrierImpact(ElasticBarrier owner)
+        {
+            if(IsInBarrierImpact || !Body.simulated || CooperativeGame == null || !CooperativeGame.CanAdvanceBall ||
+                (previousImpact==owner && Time.fixedTime<impactCooldown)) return false;
+            impactOwner=owner;
+            freeInterpolation=Body.interpolation;
+            Body.interpolation=RigidbodyInterpolation2D.None;
+            Body.linearVelocity=Vector2.zero;
+            Body.simulated=false;
+            return true;
+        }
+        internal void FinishBarrierImpact(ElasticBarrier owner,Vector2 rebound)
+        {
+            if(impactOwner!=owner) return;
+            impactOwner=null;
+            previousImpact=owner; impactCooldown=Time.fixedTime+.12f;
+            Body.interpolation=freeInterpolation;
+            Body.linearVelocity=Vector2.ClampMagnitude(rebound,maximumSpeed);
+            SetGameplaySimulation(gameplaySimulation && (CooperativeGame==null || CooperativeGame.CanAdvanceBall));
+        }
+        public void CancelBarrierImpact()
+        {
+            if(impactOwner!=null) impactOwner.CancelImpact(false);
+            previousImpact=null; impactCooldown=0;
+        }
+        void OnDisable() { CancelBarrierImpact(); }
         public static PhysicsMaterial2D ConfigureContact(Collider2D collider, PhysicsMaterial2D material)
         {
             var instance=material!=null ? new PhysicsMaterial2D("Ball contact") { friction=material.friction,bounciness=material.bounciness,frictionCombine=material.frictionCombine }
