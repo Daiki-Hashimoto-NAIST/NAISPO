@@ -59,7 +59,7 @@ namespace Naispo.Tests
         }
 
         [UnityTest]
-        public IEnumerator ContactCompressesHoldsThenReleasesAtTheExistingRallySpeed()
+        public IEnumerator ContactCompressesHoldsThenReleasesWithAWideBarrierSoftReturn()
         {
             Hit();
             float startY=ball.Body.position.y;
@@ -77,12 +77,41 @@ namespace Naispo.Tests
             Assert.IsFalse(ball.IsInBarrierImpact);
             Assert.IsTrue(ball.Body.simulated);
             Assert.That(ball.Body.linearVelocity.y,Is.GreaterThan(0));
-            Assert.That(ball.Body.linearVelocity.magnitude,Is.EqualTo(game.BallSpeed*.88f).Within(.02f));
+            Assert.That(ball.Body.linearVelocity.magnitude,Is.InRange(game.BallSpeed*.5f,game.BallSpeed*.65f),"Wide hands should absorb a substantial part of the launch speed.");
             Vector2 released=ball.Body.position;
             for(int i=0;i<6;i++) { barrier.Step(.02f); scene.GetPhysicsScene2D().Simulate(.02f); }
             Assert.IsFalse(ball.IsInBarrierImpact,"Release must not immediately capture the same ball again.");
             Assert.That(ball.Body.position.y,Is.GreaterThan(released.y+.4f));
             yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator RealHandWidthsKeepDistinctReturnSpeedsAfterReleaseAndTheNextPhysicsTick()
+        {
+            foreach(float baseSpeed in new[] {6.5f,10.5f})
+            {
+                game.BallSpeed=baseSpeed;
+                float narrowSpeed=0;
+                foreach(float meters in new[] {.35f,1.45f})
+                {
+                    game.RestartGame();
+                    double deadline=Time.realtimeSinceStartupAsDouble+3;
+                    while(game.WaitingToServe && Time.realtimeSinceStartupAsDouble<deadline) yield return null;
+                    Assert.IsTrue(game.CanAdvanceBall);
+                    barrier.SetSpan(4,meters,.16f,true);
+                    Hit(); barrier.Step(.25f);
+                    Assert.IsFalse(ball.IsInBarrierImpact);
+                    float releasedSpeed=ball.Body.linearVelocity.magnitude;
+                    yield return new WaitForFixedUpdate();
+                    Assert.That(ball.Body.linearVelocity.magnitude,Is.EqualTo(releasedSpeed).Within(.01f),"The speed limiter must not erase hand-width tuning after release.");
+                    if(meters<1) narrowSpeed=releasedSpeed;
+                    else
+                    {
+                        Assert.That(narrowSpeed,Is.GreaterThan(releasedSpeed*1.75f),"Realistic narrow and wide spans must feel clearly different.");
+                        Assert.That(releasedSpeed,Is.GreaterThan(baseSpeed*.55f),"A wide barrier must still return the ball.");
+                    }
+                }
+            }
         }
 
         [UnityTest]

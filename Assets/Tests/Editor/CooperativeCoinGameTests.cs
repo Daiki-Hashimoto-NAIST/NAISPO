@@ -76,6 +76,40 @@ namespace Naispo.Tests
             }
         }
 
+        [TestCase(6.5f)]
+        [TestCase(8.4f)]
+        [TestCase(10.5f)]
+        public void IncreasingHandWidthSoftensTheReturnContinuouslyOnEitherSide(float speed)
+        {
+            float previous=float.PositiveInfinity;
+            for(int i=0;i<=20;i++)
+            {
+                float width=i/20f;
+                Vector2 left=CooperativeCoinGame.CooperativeReflection(Vector2.zero,Vector2.up,width,-4.4f,speed);
+                Vector2 right=CooperativeCoinGame.CooperativeReflection(Vector2.zero,Vector2.up,width,4.4f,speed);
+                Assert.That(left.magnitude,Is.LessThan(previous));
+                Assert.That(left.x,Is.GreaterThan(0)); Assert.That(left.y,Is.GreaterThan(0));
+                Assert.That(right.x,Is.EqualTo(-left.x).Within(.001f));
+                Assert.That(right.y,Is.EqualTo(left.y).Within(.001f));
+                previous=left.magnitude;
+            }
+            Vector2 narrow=CooperativeCoinGame.CooperativeReflection(Vector2.zero,Vector2.up,0,-4.4f,speed);
+            Assert.That(narrow.magnitude,Is.GreaterThan(previous*1.9f));
+        }
+
+        [Test] public void UndersideAndSideContactsAlsoRespectHandWidthWithoutTurningUpward()
+        {
+            foreach(Vector2 normal in new[] {Vector2.down,Vector2.left})
+            {
+                Vector2 narrow=CooperativeCoinGame.CooperativeReflection(-normal*8,normal,0,0,8.4f);
+                Vector2 wide=CooperativeCoinGame.CooperativeReflection(-normal*8,normal,1,0,8.4f);
+                Assert.That(Vector2.Dot(wide,normal),Is.GreaterThan(0));
+                Assert.That(narrow.magnitude,Is.GreaterThan(wide.magnitude*1.9f));
+                Assert.That(narrow.y,Is.LessThanOrEqualTo(0));
+                Assert.That(wide.y,Is.LessThanOrEqualTo(0));
+            }
+        }
+
         [Test] public void FlatBarrierPassesInwardAndTiltCanChangeAimWithoutExcessSpeed()
         {
             Vector2 left=CooperativeCoinGame.CooperativeReflection(Vector2.zero,Vector2.up,.5f,-4.4f,8.4f);

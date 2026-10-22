@@ -43,6 +43,7 @@ namespace Naispo.Interaction
     public sealed class CooperativeCoinGame : MonoBehaviour
     {
         public const int CoinsPerRound = 9;
+        const float MaximumBallSpeedFactor = 1.18f;
         public Font GuiFont;
         [SerializeField, Range(1f,3.1f)] float netHeight = 2f;
         [SerializeField, Range(6.5f,10.5f)] float ballSpeed = 8.4f;
@@ -112,7 +113,7 @@ namespace Naispo.Interaction
         public float BallSpeed
         {
             get => ballSpeed;
-            set { ballSpeed=Mathf.Clamp(value,6.5f,10.5f); if(ball != null) ball.maximumSpeed=ballSpeed*1.12f; }
+            set { ballSpeed=Mathf.Clamp(value,6.5f,10.5f); if(ball != null) ball.maximumSpeed=ballSpeed*MaximumBallSpeedFactor; }
         }
 
         public void Configure(AirHockeyBall gameBall, Camera view, Font japaneseFont = null)
@@ -128,7 +129,7 @@ namespace Naispo.Interaction
             ball.GravityGame=true; ball.CooperativeGame=this;
             ball.Body.gravityScale=0.55f;
             ball.Body.linearDamping=0.015f;
-            ball.maximumSpeed=ballSpeed*1.12f;
+            ball.maximumSpeed=ballSpeed*MaximumBallSpeedFactor;
             BuildArtwork(); BuildArena(); BuildCoins(); BuildBallLight();
             configured=true;
             RefreshNet(); PlaceCoins(); BeginServe(1.4f);
@@ -419,14 +420,18 @@ namespace Naispo.Interaction
         public static Vector2 CooperativeReflection(Vector2 velocity,Vector2 normal,float softness,float ballX,float speed)
         {
             normal.Normalize();
+            float width=Mathf.Clamp01(softness);
+            // Keep an ordinary hand span close to the original pass, but let wide
+            // hands absorb much more energy. The two extremes differ by almost 2x.
+            float reboundSpeed=speed*Mathf.Lerp(1.14f,.58f,width*width);
             // A flat barrier gives a gentle pass. Players can steer by tilting either hand.
             // Underside contacts retain their downward direction instead of teleporting upward.
             if(normal.y<.05f)
-                return Vector2.ClampMagnitude(velocity+normal*Mathf.Max(0,speed*.85f-Vector2.Dot(velocity,normal)),speed*1.12f);
+                return Vector2.ClampMagnitude(velocity+normal*Mathf.Max(0,reboundSpeed*.85f-Vector2.Dot(velocity,normal)),reboundSpeed);
             float inward=ballX<0 ? 1f : -1f;
             float aim=Mathf.Clamp(inward*.43f+normal.x*.85f+velocity.x*.012f,-.85f,.85f);
             Vector2 direction=new Vector2(aim,Mathf.Max(.62f,normal.y)).normalized;
-            return direction*speed*Mathf.Lerp(1.04f,.88f,Mathf.Clamp01(softness));
+            return direction*reboundSpeed;
         }
 
         void EnsureStyles()
