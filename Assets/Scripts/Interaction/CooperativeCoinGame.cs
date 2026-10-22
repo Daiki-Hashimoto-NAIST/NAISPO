@@ -98,6 +98,7 @@ namespace Naispo.Interaction
             {
                 if(ballLightEnabled==value) return;
                 ballLightEnabled=value;
+                if(!value) ResetStarHint();
                 // Switching on must not collect along a path travelled in darkness.
                 if(ball != null) previous=ball.Body.position;
                 if(configured) RefreshLighting();
@@ -133,7 +134,7 @@ namespace Naispo.Interaction
             ball.Body.gravityScale=0.55f;
             ball.Body.linearDamping=0.015f;
             ball.maximumSpeed=ballSpeed*MaximumBallSpeedFactor;
-            BuildArtwork(); BuildArena(); BuildGardenPresentation(); BuildCoins(); BuildBallLight(); BuildVersusArtwork();
+            BuildArtwork(); BuildArena(); BuildGardenPresentation(); BuildCoins(); BuildBallLight(); BuildStarHintArtwork(); BuildVersusArtwork();
             configured=true;
             RefreshNet(); PlaceCoins(); BeginServe(1.4f);
         }
@@ -287,6 +288,7 @@ namespace Naispo.Interaction
 
         void PlaceCoins()
         {
+            ResetStarHint();
             for(int i=0;i<CoinsPerRound;i++)
             {
                 coinPositions[i]=ParabolicCoinPosition((float)i/(CoinsPerRound-1),Round,center,halfWidth,halfHeight);
@@ -372,8 +374,12 @@ namespace Naispo.Interaction
             for(int i=0;i<CoinsPerRound;i++)
             {
                 if(ballLightEnabled && !progress.IsCollected(i) && SweptHit(previous,current,coinPositions[i],radius) && progress.Collect(i))
+                {
                     pickupAges[i]=0;
+                    ResetStarHint();
+                }
             }
+            AdvanceStarHint(Time.deltaTime);
             previous=current;
             if(progress.Complete)
             {
@@ -436,6 +442,7 @@ namespace Naispo.Interaction
             }
             float coreAlpha=serveRemaining>=0 ? .75f+.25f*Mathf.Pow(Mathf.Sin(animationTime*5),2) : 1;
             ballView.color=IsVersus ? new Color(.90f,.97f,1,coreAlpha) : new Color(1,.995f,.96f,coreAlpha);
+            RefreshStarHint();
         }
 
         public static bool SweptHit(Vector2 from,Vector2 to,Vector2 coin,float radius)
