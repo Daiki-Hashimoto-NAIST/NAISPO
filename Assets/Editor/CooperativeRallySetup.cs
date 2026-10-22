@@ -32,7 +32,7 @@ public static class CooperativeRallySetup
         var sensors=AssetDatabase.LoadAssetAtPath<MultiKinectSettings>("Assets/Settings/CooperativeSensors.asset");
         if(sensors==null) {
             sensors=ScriptableObject.CreateInstance<MultiKinectSettings>();
-            sensors.serialNumbers=new[]{"000415413212","000882315112"};
+            sensors.serialNumbers=new[]{"",""};
             sensors.minimumDistance=.5f;sensors.maximumDistance=4.5f;sensors.showStatus=false;
             sensors.launchMode=WorkerLaunchMode.Manual;
             AssetDatabase.CreateAsset(sensors,"Assets/Settings/CooperativeSensors.asset");

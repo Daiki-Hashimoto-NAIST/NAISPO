@@ -27,6 +27,8 @@ namespace Naispo.Interaction
         MultiKinectSettings sensorSettings;
         string leftSerial,rightSerial;
         float minimumDistance,maximumDistance;
+        Vector2 diagnosticScroll;
+        string copyStatus="";
         GUIStyle label,small,button,field,title;
 
         void Awake()
@@ -39,8 +41,9 @@ namespace Naispo.Interaction
             gameCamera.backgroundColor=new Color(.018f,.028f,.065f);
             sensorSettings=Instantiate(sensorTemplate);
             sensorSettings.showStatus=false;
-            leftSerial=PlayerPrefs.GetString("Coop.LeftSerial",sensorSettings.serialNumbers[0]);
-            rightSerial=PlayerPrefs.GetString("Coop.RightSerial",sensorSettings.serialNumbers[1]);
+            var defaults=sensorSettings.serialNumbers;
+            leftSerial=PlayerPrefs.GetString("Coop.LeftSerial",defaults!=null&&defaults.Length>0 ? defaults[0]??"" : "");
+            rightSerial=PlayerPrefs.GetString("Coop.RightSerial",defaults!=null&&defaults.Length>1 ? defaults[1]??"" : "");
             minimumDistance=PlayerPrefs.GetFloat("Coop.MinDistance",.5f);
             maximumDistance=PlayerPrefs.GetFloat("Coop.MaxDistance",4.5f);
             ApplySensorSettings();
@@ -108,6 +111,21 @@ namespace Naispo.Interaction
             bool ready=!SensorMode||BothPlayersReady;
             Game.ExternalOverlayOpen=SensorSettingsOpen;
             Game.SetInputReady(ready&&!SensorSettingsOpen);
+            if(SensorMode&&Sensors.StartupState==KinectStartupState.Error)
+            {
+                Game.InputWaitTitle="カメラを確認してください";
+                Game.InputWaitDetail="「カメラの設定」に原因と接続状況を表示しています";
+            }
+            else if(SensorMode&&Sensors.StartupState!=KinectStartupState.Running)
+            {
+                Game.InputWaitTitle="Kinectの接続を待っています";
+                Game.InputWaitDetail="カメラと人体認識の起動状況は「カメラの設定」へ";
+            }
+            else
+            {
+                Game.InputWaitTitle="ふたりの準備を待っています";
+                Game.InputWaitDetail="左右の認識状況を画面下で確認してください";
+            }
             for(int i=0;i<2;i++)demos[i].acceptControls=Application.isFocused&&!SensorSettingsOpen&&!Game.SettingsOpen&&!Game.IsPaused;
             gameCamera.backgroundColor=new Color(.018f,.028f,.065f);
         }
@@ -119,6 +137,44 @@ namespace Naispo.Interaction
             var frame=manager.CurrentFrame;
             return frame!=null&&frame.BodyCount>0&&
                 HandWallController.TryEndpoints(frame.Hands[0],manager.mapper,out _,out _);
+        }
+
+        public string PlayerStatus(int slot)
+        {
+            if((uint)slot>=2)return "入力設定がありません";
+            if(!SensorMode)return Ready(slot)?"キーボード操作中":"入力待ち";
+            if(Sensors.StartupState==KinectStartupState.Error)return Sensors.LifecycleStatus;
+            var receiver=receivers[slot];
+            if(receiver.HasFailed)return "受信エラー: "+receiver.Status;
+            if(Ready(slot))return "認識中";
+            if(!receiver.isActiveAndEnabled)return "カメラの接続を確認中";
+            if(!receiver.Connected)return "カメラの起動待ち";
+            if(receiver.ReceivedFrames==0)return "人体認識を初期化中";
+            if(!Players[slot].IsFresh)return "データが途切れています";
+            string handStatus=KinectHandFrameAdapter.DescribeReadiness(receiver.LatestMetadata);
+            return string.IsNullOrEmpty(handStatus)?"両手を少し離してください":handStatus;
+        }
+
+        string FooterStatus(int slot) => Sensors.StartupState==KinectStartupState.Error
+            ? "起動エラー（カメラの設定へ）" : PlayerStatus(slot);
+
+        string DiagnosticSummary()
+        {
+            var text=new System.Text.StringBuilder("Kinect 接続診断\n");
+            text.AppendLine(Sensors.LifecycleStatus).AppendLine().AppendLine(Sensors.DiscoveryReport);
+            for(int slot=0;slot<2;slot++)
+            {
+                var receiver=receivers[slot];
+                string requested=slot==0?leftSerial:rightSerial;
+                text.AppendLine().AppendLine(slot==0?"左のカメラ":"右のカメラ");
+                text.AppendLine("指定: "+(string.IsNullOrWhiteSpace(requested)?"自動":requested)+" / 接続: "+Sensors.AssignedSerial(slot));
+                text.AppendLine(PlayerStatus(slot));
+                text.AppendLine($"受信 {Sensors.ReceiveFps[slot]:F1} fps / 人体認識 {receiver.LatestMetadata.TrackingFps:F1} fps / {receiver.ReceivedFrames} フレーム");
+                text.AppendLine("通信: "+receiver.Status);
+                text.AppendLine(Sensors.WorkerDetail(slot));
+            }
+            text.AppendLine().AppendLine("記録フォルダー: "+Sensors.DiagnosticDirectory);
+            return text.ToString();
         }
 
         public void UseDemo()
@@ -170,9 +226,9 @@ namespace Naispo.Interaction
             if(GUI.Button(new Rect(24,635,170,38),SensorMode?"キーボードに戻る":"キーボード操作",button))UseDemo();
             if(GUI.Button(new Rect(204,635,142,38),SensorMode?"Kinectを再接続":"Kinect 2台で遊ぶ",button))UseSensors();
             if(GUI.Button(new Rect(356,635,124,38),"カメラの設定",button))SensorSettingsOpen=true;
-            GUI.Label(new Rect(506,630,355,30),SensorMode?"左の人  "+(Ready(0)?"● 認識中":"両手をカメラへ"):"左の人  WASD 移動 / Q・E 傾き",label);
-            GUI.Label(new Rect(888,630,370,30),SensorMode?"右の人  "+(Ready(1)?"● 認識中":"両手をカメラへ"):"右の人  ↑↓←→ 移動 / J・L 傾き",label);
-            GUI.Label(new Rect(506,666,355,28),SensorMode?"手を開いてバリアを出そう":"Z・X 手幅  ／  マウスでも移動",small);
+            GUI.Label(new Rect(506,630,355,32),SensorMode?"左の人  "+FooterStatus(0):"左の人  WASD 移動 / Q・E 傾き",SensorMode?small:label);
+            GUI.Label(new Rect(888,630,370,32),SensorMode?"右の人  "+FooterStatus(1):"右の人  ↑↓←→ 移動 / J・L 傾き",SensorMode?small:label);
+            GUI.Label(new Rect(506,666,355,28),SensorMode?"詳細と対処は「カメラの設定」へ":"Z・X 手幅  ／  マウスでも移動",small);
             GUI.Label(new Rect(888,666,370,28),SensorMode?"2人そろうとボールが動きます":"U・O 手幅  ／  マウスでも移動",small);
             GUI.Label(new Rect(24,682,460,26),SensorMode?"KINECT 2台  ·  協力プレイ":"DEMO  ·  カメラを使わず2人で操作できます",small);
             GUI.enabled=true;
@@ -184,26 +240,38 @@ namespace Naispo.Interaction
         void DrawSettings()
         {
             Fill(new Rect(0,0,1280,720),new Color(.006f,.010f,.025f,.90f));
-            Fill(new Rect(290,116,700,488),new Color(.05f,.08f,.14f));
-            GUI.Label(new Rect(326,136,620,40),"カメラの設定",title);
-            GUI.Label(new Rect(326,187,620,30),"各カメラが1人ずつ担当します。左右が逆なら入れ替えてください。",small);
-            GUI.Label(new Rect(326,230,114,30),"左のカメラ",label);
-            leftSerial=GUI.TextField(new Rect(450,225,280,36),leftSerial,32,field);
-            GUI.Label(new Rect(326,279,114,30),"右のカメラ",label);
-            rightSerial=GUI.TextField(new Rect(450,274,280,36),rightSerial,32,field);
-            if(GUI.Button(new Rect(754,225,182,85),"左右を入れ替える",button)) {
-                var serial=leftSerial;leftSerial=rightSerial;rightSerial=serial;
+            Fill(new Rect(130,74,1020,604),new Color(.05f,.08f,.14f));
+            GUI.Label(new Rect(162,94,620,40),"カメラの設定",title);
+            GUI.Label(new Rect(162,148,440,44),"空欄なら接続中の2台を自動設定します。\n番号を入力すると、そのカメラを指定できます。",small);
+            GUI.Label(new Rect(162,203,114,30),"左のカメラ",label);
+            leftSerial=GUI.TextField(new Rect(286,198,316,36),leftSerial,32,field);
+            GUI.Label(new Rect(162,253,114,30),"右のカメラ",label);
+            rightSerial=GUI.TextField(new Rect(286,248,316,36),rightSerial,32,field);
+            if(GUI.Button(new Rect(162,300,210,36),"自動設定",button)) { leftSerial=rightSerial=""; }
+            if(GUI.Button(new Rect(390,300,212,36),"左右を入れ替える",button)) {
+                string oldLeft=string.IsNullOrWhiteSpace(leftSerial)?Sensors.AssignedSerial(0):leftSerial;
+                string oldRight=string.IsNullOrWhiteSpace(rightSerial)?Sensors.AssignedSerial(1):rightSerial;
+                leftSerial=oldRight;rightSerial=oldLeft;
             }
-            GUI.Label(new Rect(326,331,620,28),$"検出する距離   {minimumDistance:F1} ～ {maximumDistance:F1} m",label);
-            GUI.Label(new Rect(326,369,80,28),"近い側",small);
-            minimumDistance=GUI.HorizontalSlider(new Rect(410,380,526,20),minimumDistance,.5f,Mathf.Min(3,maximumDistance-.3f));
-            GUI.Label(new Rect(326,407,80,28),"遠い側",small);
-            maximumDistance=GUI.HorizontalSlider(new Rect(410,418,526,20),maximumDistance,Mathf.Max(1,minimumDistance+.3f),5);
-            GUI.Label(new Rect(326,448,610,52),SensorMode?Sensors.LifecycleStatus:"カメラ本体のシリアル番号を入力。設定はこのPCに保存されます。",small);
-            if(GUI.Button(new Rect(326,526,292,44),"保存してKinectを開始",button)) {
+            GUI.Label(new Rect(162,362,440,28),$"検出する距離   {minimumDistance:F1} ～ {maximumDistance:F1} m",label);
+            GUI.Label(new Rect(162,407,80,28),"近い側",small);
+            minimumDistance=GUI.HorizontalSlider(new Rect(246,418,356,20),minimumDistance,.5f,Mathf.Min(3,maximumDistance-.3f));
+            GUI.Label(new Rect(162,453,80,28),"遠い側",small);
+            maximumDistance=GUI.HorizontalSlider(new Rect(246,464,356,20),maximumDistance,Mathf.Max(1,minimumDistance+.3f),5);
+            GUI.Label(new Rect(162,510,440,68),"接続後に左右が逆なら入れ替えて再接続。\nこのPCに設定を保存します。\n番号が違う場合は「自動設定」を選んでください。",small);
+            string diagnostics=DiagnosticSummary();
+            float contentHeight=small.CalcHeight(new GUIContent(diagnostics),436)+16;
+            diagnosticScroll=GUI.BeginScrollView(new Rect(654,148,464,426),diagnosticScroll,new Rect(0,0,438,contentHeight));
+            GUI.Label(new Rect(0,0,436,contentHeight),diagnostics,small);
+            GUI.EndScrollView();
+            if(GUI.Button(new Rect(162,602,272,42),"保存してKinectを開始",button)) {
                 SaveSensorSettings();SensorSettingsOpen=false;UseSensors();
             }
-            if(GUI.Button(new Rect(638,526,298,44),"閉じる",button))SensorSettingsOpen=false;
+            if(GUI.Button(new Rect(448,602,154,42),"閉じる",button))SensorSettingsOpen=false;
+            if(GUI.Button(new Rect(654,602,220,42),"診断をコピー",button)) {
+                GUIUtility.systemCopyBuffer=diagnostics;copyStatus="コピーしました";
+            }
+            GUI.Label(new Rect(892,610,226,28),copyStatus,small);
         }
 
         void EnsureStyles()

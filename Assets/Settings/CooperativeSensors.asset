@@ -15,8 +15,8 @@ MonoBehaviour:
   launchMode: 0
   workerExecutable: Tools/KinectWorker/bin/Release/net10.0-windows/KinectWorker.exe
   serialNumbers:
-  - 000415413212
-  - 000882315112
+  - ""
+  - ""
   pipeNames:
   - NaispoCoinP1
   - NaispoCoinP2

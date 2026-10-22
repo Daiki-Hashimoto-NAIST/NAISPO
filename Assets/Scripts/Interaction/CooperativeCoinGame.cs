@@ -79,6 +79,8 @@ namespace Naispo.Interaction
         public bool InputReady => inputReady;
         public bool SettingsOpen => settingsOpen;
         public bool ExternalOverlayOpen { get; set; }
+        public string InputWaitTitle { get; set; } = "ふたりの準備を待っています";
+        public string InputWaitDetail { get; set; } = "両手をセンサーに見せると再開します";
         public bool WaitingToServe => serveRemaining >= 0;
         public bool RoundComplete => progress.Complete;
         public float ArenaFloor => center.y-halfHeight+0.6f;
@@ -465,7 +467,7 @@ namespace Naispo.Interaction
             if(GUI.Button(new Rect(1063,65,186,29),"はじめから",buttonStyle)) RestartGame();
 
             if(settingsOpen) DrawSettings();
-            else if(!inputReady) DrawMessage("ふたりの準備を待っています","両手をセンサーに見せると再開します",new Color(.44f,.83f,.92f));
+            else if(!inputReady) DrawMessage(InputWaitTitle,InputWaitDetail,new Color(.44f,.83f,.92f));
             else if(paused) DrawMessage("ひとやすみ","「再開」で続けられます",new Color(.76f,.82f,.95f));
             else if(clearRemaining>=0) DrawMessage("全部とれた！",$"ふたりで {TeamScore} コイン。次のアーチへ！",new Color(1,.8f,.34f));
             else if(serveRemaining>=0)

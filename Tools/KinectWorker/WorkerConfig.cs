@@ -12,6 +12,7 @@ public sealed class WorkerConfig
     public DepthMode DepthMode {get;set;}=DepthMode.NFOV_2x2Binned;
     public FPS Fps {get;set;}=FPS.FPS15;
     public TrackerProcessingMode ProcessingMode {get;set;}=TrackerProcessingMode.DirectML;
+    public bool AllowCpuFallback {get;set;}=true;
     public float MinDistance {get;set;}=0.5f;
     public float MaxDistance {get;set;}=4.5f;
     public float MaxAbsX {get;set;}=1.2f;

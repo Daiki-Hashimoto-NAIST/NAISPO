@@ -86,17 +86,22 @@ static class Program
     static ulong Session()=>BitConverter.ToUInt64(Guid.NewGuid().ToByteArray(),0);
     static void Capture(WorkerConfig c,LatestPlayerFrame latest,CancellationToken token)
     {
+        Console.WriteLine("Loading Kinect runtime: "+c.NativeDirectory);
         Load(c.NativeDirectory,true);if(!File.Exists(c.ModelPath))throw new FileNotFoundException("Missing body tracking model",c.ModelPath);
+        Console.WriteLine("Opening Kinect: serial="+c.Serial+" index="+c.DeviceIndex);
         using var device=OpenSerial(c.Serial,c.DeviceIndex);bool started=false;Tracker tracker=null;
         try
         {
+            token.ThrowIfCancellationRequested();
+            Console.WriteLine("Starting depth camera: "+c.DepthMode+" "+c.Fps);
             device.StartCameras(new DeviceConfiguration{DepthMode=c.DepthMode,CameraFPS=c.Fps,ColorResolution=ColorResolution.Off,WiredSyncMode=WiredSyncMode.Standalone,SynchronizedImagesOnly=false});started=true;
             var calibration=device.GetCalibration();var tc=TrackerConfiguration.Default;tc.SensorOrientation=SensorOrientation.Default;tc.ProcessingMode=c.ProcessingMode;tc.ModelPath=c.ModelPath;
-            tracker=Tracker.Create(calibration,tc);tracker.SetTemporalSmooting(0);
-            Console.WriteLine("Tracker ready: "+c.ProcessingMode+" "+c.DepthMode+" "+c.Fps);
+            tracker=TrackerStartup.Create(c,mode=>{tc.ProcessingMode=mode;return Tracker.Create(calibration,tc);},token,Console.WriteLine,out var activeMode);
+            tracker.SetTemporalSmooting(0);
+            Console.WriteLine("Tracker ready: "+activeMode+" "+c.DepthMode+" "+c.Fps);
             var frame=new TrackedPlayerFrame();var selector=new BodySelector();var ids=new uint[255];var xs=new float[255];var zs=new float[255];var conf=new int[255];
             var clock=Stopwatch.StartNew();var enqueueTimes=new Dictionary<long,long>(2);ulong session=Session();long sequence=0;int captured=0,tracked=0,inflight=0;double lastCapture=0,lastResult=0,measure=0;float captureFps=0,trackingFps=0,captureMs=0,trackingMs=0;
-            int reportedCount=-1;uint reportedId=uint.MaxValue;double nextSelectionReport=0,lastSelectionReport=-10;
+            int reportedCount=-1;uint reportedId=uint.MaxValue;string reportedHands="";double nextSelectionReport=0,lastSelectionReport=-10;
             while(!token.IsCancellationRequested)
             {
                 if(inflight<2)try{long t=Stopwatch.GetTimestamp();using var capture=device.GetCapture(TimeSpan.FromMilliseconds(5));captureMs=(float)Stopwatch.GetElapsedTime(t).TotalMilliseconds;captured++;lastCapture=clock.Elapsed.TotalSeconds;tracker.EnqueueCapture(capture,TimeSpan.FromMilliseconds(5));using(var depth=capture.Depth)enqueueTimes[depth.DeviceTimestamp.Ticks]=Stopwatch.GetTimestamp();inflight++;}catch(TimeoutException){}
@@ -108,22 +113,24 @@ static class Program
                     for(uint i=0;i<count;i++){var pelvis=result.GetBodySkeleton(i).GetJoint(JointId.Pelvis);ids[i]=result.GetBodyId(i);xs[i]=pelvis.Position.X*.001f;zs[i]=pelvis.Position.Z*.001f;conf[i]=(int)pelvis.ConfidenceLevel;}
                     int selected=selector.Choose(ids,xs,zs,conf,count,lastResult,c);
                     uint selectedId=selected>=0?ids[selected]:uint.MaxValue;
-                    if(lastResult>=nextSelectionReport&&(count!=reportedCount||selectedId!=reportedId||(count>0&&selected<0&&lastResult-lastSelectionReport>=5)))
-                    {
-                        string candidates=string.Join("; ",Enumerable.Range(0,Math.Min(count,4)).Select(i=>$"id={ids[i]} x={xs[i]:F2}m z={zs[i]:F2}m confidence={conf[i]}"));
-                        Console.WriteLine($"Tracking: detected={count} selected={(selected>=0?selectedId.ToString():"none")} regionZ={c.MinDistance:F1}-{c.MaxDistance:F1}m absX<={c.MaxAbsX:F1}m | {candidates}");
-                        reportedCount=count;reportedId=selectedId;lastSelectionReport=lastResult;nextSelectionReport=lastResult+1;
-                    }
                     using var map=result.BodyIndexMap;frame.Resize(map.WidthPixels,map.HeightPixels);frame.Slot=c.Slot;frame.Serial=c.Serial;frame.Session=session;frame.Sequence=++sequence;frame.TrackingTimestamp=result.DeviceTimestamp.TotalSeconds;
                     using(var capture=result.Capture)using(var depth=capture.Depth){frame.CaptureTimestamp=depth.DeviceTimestamp.TotalSeconds;if(enqueueTimes.TryGetValue(depth.DeviceTimestamp.Ticks,out long enqueued)){trackingMs=(float)Stopwatch.GetElapsedTime(enqueued).TotalMilliseconds;enqueueTimes.Remove(depth.DeviceTimestamp.Ticks);}}
                     frame.Tracked=selected>=0;frame.BodyId=selected>=0?ids[selected]:uint.MaxValue;
                     var bytes=map.Memory.Span;for(int y=0;y<frame.Height;y++)for(int x=0;x<frame.Width;x++)frame.Mask[y*frame.Width+x]=(byte)(selected>=0&&bytes[y*map.StrideBytes+x]==selected?1:0);
                     Array.Clear(frame.Joints);
                     if(selected>=0){var skeleton=result.GetBodySkeleton((uint)selected);for(int j=0;j<32;j++){var joint=skeleton.GetJoint((JointId)j);var w=new WireJoint{X=joint.Position.X,Y=joint.Position.Y,Z=joint.Position.Z,Qx=joint.Quaternion.X,Qy=joint.Quaternion.Y,Qz=joint.Quaternion.Z,Qw=joint.Quaternion.W,Confidence=(byte)joint.ConfidenceLevel};if(KinectWire.Finite(w.X)&&KinectWire.Finite(w.Y)&&KinectWire.Finite(w.Z)&&w.Z>0){w.Flags=1;var pixel=calibration.TransformTo2D(joint.Position,CalibrationDeviceType.Depth,CalibrationDeviceType.Depth);if(pixel.HasValue&&KinectWire.Finite(pixel.Value.X)&&KinectWire.Finite(pixel.Value.Y)){w.U=pixel.Value.X;w.V=pixel.Value.Y;w.Flags|=2;}}frame.Joints[j]=w;}}
+                    string hands=selected>=0?$"left(confidence={frame.Joints[8].Confidence}, projected={(frame.Joints[8].Flags&2)!=0}) right(confidence={frame.Joints[15].Confidence}, projected={(frame.Joints[15].Flags&2)!=0})":"none";
+                    if(lastResult>=nextSelectionReport&&(count!=reportedCount||selectedId!=reportedId||hands!=reportedHands||lastResult-lastSelectionReport>=5))
+                    {
+                        string candidates=string.Join("; ",Enumerable.Range(0,Math.Min(count,4)).Select(i=>$"id={ids[i]} x={xs[i]:F2}m z={zs[i]:F2}m confidence={conf[i]}"));
+                        Console.WriteLine($"Tracking: detected={count} selected={(selected>=0?selectedId.ToString():"none")} hands={hands} regionZ={c.MinDistance:F1}-{c.MaxDistance:F1}m absX<={c.MaxAbsX:F1}m | {candidates}");
+                        reportedCount=count;reportedId=selectedId;reportedHands=hands;lastSelectionReport=lastResult;nextSelectionReport=lastResult+1;
+                    }
                     frame.CaptureFps=captureFps;frame.TrackingFps=trackingFps;frame.CaptureMs=captureMs;frame.TrackingMs=trackingMs;latest.Publish(ref frame);
                 }
                 double now=clock.Elapsed.TotalSeconds;if(now-measure>=1){captureFps=(float)(captured/(now-measure));trackingFps=(float)(tracked/(now-measure));captured=tracked=0;measure=now;}
-                if(now-lastCapture>10||now-lastResult>20)throw new TimeoutException("Capture/tracker stalled. No automatic restart.");
+                if(inflight==0&&now-lastCapture>10)throw new TimeoutException("No depth captures for 10 seconds. Check Kinect power/USB and reconnect.");
+                if(now-lastResult>20)throw new TimeoutException("Body tracker produced no results for 20 seconds. Check the tracker startup log and reconnect.");
             }
         }
         finally{try{if(tracker!=null){tracker.Shutdown();tracker.Dispose();}}finally{if(started)device.StopCameras();}}
