@@ -109,6 +109,7 @@ namespace Naispo.Interaction
                 Vector2 to = Vector2.Lerp(previousBall,currentBall,toT)-ItemPositionAtAge(availableTo);
                 if(SweptHit(from,to,Vector2.zero,pickupRadius) && versus.CollectItem())
                 {
+                    if(battleEffects!=null) battleEffects.Pickup(ItemPosition,versus.LastHitter);
                     DismissVersusItem();
                     return;
                 }

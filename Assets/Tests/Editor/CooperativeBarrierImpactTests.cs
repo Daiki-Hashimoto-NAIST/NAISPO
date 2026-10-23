@@ -149,6 +149,81 @@ namespace Naispo.Tests
         }
 
         [UnityTest]
+        public IEnumerator ContactAboveASaggingBarrierStillUsesItsFrontSide()
+        {
+            barrier.Kick(12,-1); barrier.Step(.04f);
+            Assert.That(barrier.Deflection,Is.LessThan(-.4f),"Exercise a visible surface below the undeformed hand line.");
+            Hit(); barrier.Step(.25f);
+            Assert.That(ball.Body.linearVelocity.x,Is.EqualTo(0).Within(.001f));
+            Assert.That(ball.Body.linearVelocity.y,Is.GreaterThan(1),"A front-side hit must not become a downward return just because the string is sagging.");
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator ContactBelowAnUpwardBentBarrierStillUsesItsBackSide()
+        {
+            barrier.Kick(12,1); barrier.Step(.04f);
+            Assert.That(barrier.Deflection,Is.GreaterThan(.4f));
+            Hit(0,true); barrier.Step(.25f);
+            Assert.That(ball.Body.linearVelocity.x,Is.EqualTo(0).Within(.001f));
+            Assert.That(ball.Body.linearVelocity.y,Is.LessThan(-1),"A genuine underside hit stays underneath even when the bent surface is above the hand line.");
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator OffCenterContactWithASaggingBarrierUsesTheStraightHandLineForReflection()
+        {
+            barrier.Kick(12,-1); barrier.Step(.04f);
+            Assert.That(barrier.Shape[18].y-barrier.Shape[17].y,Is.GreaterThan(.04f),"Hit a sloped section of the deformed surface.");
+            Hit(1); barrier.Step(.25f);
+            Assert.That(ball.Body.linearVelocity.x,Is.EqualTo(0).Within(.005f),"The curve's local slope must not bend the launch away from the hand-to-hand normal.");
+            Assert.That(ball.Body.linearVelocity.y,Is.EqualTo(8*.58f).Within(.03f));
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator MovePositionDuringContactPreservesTheIncomingWorldDirection()
+        {
+            var handBody=barrier.GetComponent<Rigidbody2D>();
+            Vector2 position=(Vector2)barrier.transform.position+Vector2.up;
+            ball.Body.position=position; ball.transform.position=position;
+            ball.Body.linearVelocity=new Vector2(-3,-6);
+            Physics2D.SyncTransforms();
+            for(int i=0;i<20 && !ball.IsInBarrierImpact;i++)
+            {
+                handBody.MovePosition(handBody.position+new Vector2(.2f,.05f));
+                scene.GetPhysicsScene2D().Simulate(.02f);
+            }
+            Assert.IsTrue(ball.IsInBarrierImpact,"Exercise the same queued movement used by live hand tracking.");
+            handBody.linearVelocity=Vector2.zero;
+            barrier.Step(.25f);
+            Assert.That(Vector2.Angle(ball.Body.linearVelocity,new Vector2(-3,6)),Is.LessThan(.1f),"Forward hand translation must not reverse the ball's incoming horizontal direction.");
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator ReleaseUsesThePoseAppliedByPhysicsThatFrame()
+        {
+            Hit(); barrier.Step(.19f);
+            var handBody=barrier.GetComponent<Rigidbody2D>();
+            Vector2 destination=handBody.position+new Vector2(.3f,.6f);
+            handBody.MovePosition(destination);
+            handBody.MoveRotation(-26.56505f);
+            // Production ordering: hand commands, barrier FixedUpdate, physics,
+            // then LateUpdate. The ball must follow the last commanded hand pose.
+            barrier.SendMessage("FixedUpdate");
+            scene.GetPhysicsScene2D().Simulate(.02f);
+            barrier.SendMessage("LateUpdate");
+            Assert.IsFalse(ball.IsInBarrierImpact);
+            Assert.That(Vector2.Distance(handBody.position,destination),Is.LessThan(.001f));
+            Vector2 local=barrier.transform.InverseTransformPoint(ball.Body.position);
+            Assert.That(local.y,Is.GreaterThan(.3f),"The final hand movement must not pass through a ball released at the previous pose.");
+            Assert.That(ball.Body.linearVelocity.normalized.x,Is.EqualTo(.8f).Within(.002f));
+            Assert.That(ball.Body.linearVelocity.normalized.y,Is.EqualTo(.6f).Within(.002f));
+            yield break;
+        }
+
+        [UnityTest]
         public IEnumerator TurningTheBarrierDuringCompressionChangesTheReleaseDirection()
         {
             Hit(); barrier.Step(.07f);

@@ -23,6 +23,7 @@ namespace Naispo.Interaction
         void RefreshPresentation()
         {
             if(garden!=null)garden.SetVisible(!IsVersus);
+            if(battleEffects!=null)battleEffects.SetVisible(IsVersus);
             if(cyber!=null) { cyber.SetVisible(IsVersus);cyber.SetNet(ArenaFloor+netHeight,MatchFloor); }
             if(courtArtwork!=null)for(int i=0;i<courtArtwork.Length;i++)
             {

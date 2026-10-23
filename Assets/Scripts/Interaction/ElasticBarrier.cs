@@ -23,6 +23,7 @@ namespace Naispo.Interaction
         float returnStrength=1, impactBoost;
         float impactAge, impactDuration, impactDepth, impactStart, impactSide, impactPoint=.5f, ballPoint, ballGap;
         float bendPoint=.5f;
+        bool steppingFromPhysics, releaseAfterPhysics;
         public float Deflection => offset;
         public float Restitution => material.bounciness;
         public Vector2[] Shape => points;
@@ -94,7 +95,11 @@ namespace Naispo.Interaction
                 if(t>=1)
                 {
                     velocity=-impactDepth*frequency*.18f;
-                    CompleteImpact(CurrentRebound());
+                    // MovePosition/MoveRotation queued by the hands are not applied
+                    // until after FixedUpdate. Keep the ball attached through that
+                    // final move, then release from the pose the player actually sees.
+                    if(steppingFromPhysics) releaseAfterPhysics=true;
+                    else ReleaseImpact();
                 }
                 return;
             }
@@ -108,12 +113,21 @@ namespace Naispo.Interaction
             }
             Draw();
         }
-        void FixedUpdate() { if(edge != null && edge.enabled) Step(Time.fixedDeltaTime); }
+        void FixedUpdate()
+        {
+            if(edge==null || !edge.enabled) return;
+            steppingFromPhysics=true;
+            Step(Time.fixedDeltaTime);
+            steppingFromPhysics=false;
+        }
         void LateUpdate()
         {
             // Kinematic hand movement is applied by physics after FixedUpdate.
             if(IsHoldingBall && heldBall.CooperativeGame!=null && heldBall.CooperativeGame.CanAdvanceBall)
+            {
                 PositionHeldBall();
+                if(releaseAfterPhysics) ReleaseImpact();
+            }
         }
         float ShapeAt(float t)
         {
@@ -137,7 +151,7 @@ namespace Naispo.Interaction
             var ball = collision.rigidbody;
             if(ball == null || ball.bodyType != RigidbodyType2D.Dynamic || collision.contactCount == 0) return;
             float speed = Mathf.Abs(Vector2.Dot(collision.relativeVelocity,transform.up));
-            float side = transform.InverseTransformPoint(ball.position).y;
+            float side = ContactSide(collision,ball);
             var gameBall = ball.GetComponent<AirHockeyBall>();
             if(gameBall != null && gameBall.GravityGame && gameBall.CooperativeGame != null)
             {
@@ -159,9 +173,35 @@ namespace Naispo.Interaction
         }
         Vector2 IncomingVelocity(Collision2D collision)
         {
-            var contact=collision.GetContact(0);
-            Vector2 surface=edge.attachedRigidbody!=null ? edge.attachedRigidbody.GetPointVelocity(contact.point) : Vector2.zero;
-            return surface+contact.relativeVelocity;
+            // MovePosition has already cleared the hand body's temporary velocity
+            // by the time collision callbacks run. Adding its current velocity to
+            // contact.relativeVelocity therefore invents a backwards ball motion.
+            // Instead undo this contact's solver impulse on the dynamic ball.
+            Vector2 incoming=collision.rigidbody.linearVelocity;
+            float inverseMass=1/collision.rigidbody.mass;
+            for(int i=0;i<collision.contactCount;i++)
+            {
+                var contact=collision.GetContact(i);
+                Vector2 tangent=new Vector2(contact.normal.y,-contact.normal.x);
+                incoming+=(contact.normal*contact.normalImpulse+tangent*contact.tangentImpulse)*inverseMass;
+            }
+            return incoming;
+        }
+        float ContactSide(Collision2D collision,Rigidbody2D ball)
+        {
+            // The callback normal faces this barrier. Use its opposite only to
+            // identify the contacted face; the rebound still uses the straight
+            // hand-to-hand normal, never the slope of the visual deformation.
+            float facing=0;
+            for(int i=0;i<collision.contactCount;i++)
+            {
+                float candidate=Vector2.Dot(-collision.GetContact(i).normal,transform.up);
+                if(Mathf.Abs(candidate)>Mathf.Abs(facing)) facing=candidate;
+            }
+            if(Mathf.Abs(facing)>.001f) return Mathf.Sign(facing);
+            Vector2 local=transform.InverseTransformPoint(ball.position);
+            float surfaceY=offset*ShapeAt(Mathf.Clamp01(local.x/length+.5f));
+            return local.y>=surfaceY ? 1 : -1;
         }
         void OnCollisionStay2D(Collision2D collision)
         {
@@ -225,8 +265,18 @@ namespace Naispo.Interaction
         }
         void CompleteImpact(Vector2 outgoing)
         {
+            releaseAfterPhysics=false;
             var ball=heldBall; heldBall=null;
             if(ball!=null) ball.FinishBarrierImpact(this,outgoing);
+        }
+        void ReleaseImpact()
+        {
+            var game=heldBall.CooperativeGame;
+            Vector2 outgoing=CurrentRebound();
+            Vector2 position=heldBall.Body.position;
+            float boost=impactBoost;
+            CompleteImpact(outgoing);
+            if(game!=null) game.NotifyBarrierReleased(position,PlayerSide,boost);
         }
         public void CancelImpact(bool release)
         {

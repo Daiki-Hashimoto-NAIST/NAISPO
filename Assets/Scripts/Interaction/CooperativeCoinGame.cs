@@ -134,7 +134,7 @@ namespace Naispo.Interaction
             ball.Body.gravityScale=0.55f;
             ball.Body.linearDamping=0.015f;
             ball.maximumSpeed=ballSpeed*MaximumBallSpeedFactor;
-            BuildArtwork(); BuildArena(); BuildGardenPresentation(); BuildCoins(); BuildBallLight(); BuildStarHintArtwork(); BuildVersusArtwork();
+            BuildArtwork(); BuildArena(); BuildGardenPresentation(); BuildCoins(); BuildBallLight(); BuildStarHintArtwork(); BuildVersusArtwork(); BuildBattlePresentation();
             configured=true;
             RefreshNet(); PlaceCoins(); BeginServe(1.4f);
         }
@@ -323,17 +323,20 @@ namespace Naispo.Interaction
         void ApplySimulationState()
         {
             if(ball != null) ball.SetGameplaySimulation(CanAdvanceBall);
+            SyncBattleSuspension();
         }
         public void RestartGame()
         {
             if(!configured) return;
             progress.Reset(); versus.Reset(); lastPointWinner=0; clearRemaining=-1; paused=false;
+            ResetBattlePresentation();
             PlaceCoins(); BeginServe(1.2f);
         }
 
         void Update()
         {
             if(!configured) return;
+            AdvanceBattlePresentation(Time.deltaTime);
             if(!inputReady || paused || settingsOpen || ExternalOverlayOpen || (IsVersus && versus.Complete)) return;
             if(clearRemaining>=0)
             {
@@ -481,6 +484,7 @@ namespace Naispo.Interaction
             int losingSide=Mathf.Abs(crossingX)<.001f ? servingSide : crossingX<0 ? -1 : 1;
             if(!versus.AwardPoint(losingSide)) return false;
             lastPointWinner=-losingSide;
+            CelebratePoint(new Vector2(center.x+crossingX,MatchFloor));
             if(versus.Complete)
             {
                 ball.CancelBarrierImpact();
@@ -560,26 +564,22 @@ namespace Naispo.Interaction
             DrawPlayerScore(508,-1,versus.LeftScore,leftScoreStyle);
             DrawPlayerScore(672,1,versus.RightScore,rightScoreStyle);
             Fill(new Rect(631,78,18,1),new Color(.49f,.59f,.68f,.65f));
+            DrawBattlePoint();
         }
 
         void DrawPlayerScore(float x,int side,int score,GUIStyle style)
         {
             Color color=PlayerColor(side);
-            float age=serveDuration-serveRemaining;
-            bool scored=lastPointWinner==side && WaitingToServe;
-            float pop=scored ? Mathf.Sin(Mathf.Clamp01(age/.65f)*Mathf.PI) : 0;
-            style.fontSize=Mathf.RoundToInt(52+pop*10);
-            GUI.Label(new Rect(x,42-pop*3,100,72),score.ToString(),style);
+            float age=battlePointAge;
+            bool scored=lastPointWinner==side && age<1.15f;
+            float pop=scored ? Mathf.Sin(Mathf.Clamp01(age/.42f)*Mathf.PI) : 0;
+            style.fontSize=Mathf.RoundToInt(52+pop*26);
+            GUI.Label(new Rect(x-8,32-pop*4,116,92),score.ToString(),style);
             for(int i=0;i<RallyVersusState.PointsToWin;i++)
             {
                 Color pip=color; pip.a=i<score ? 1 : .18f;
-                Fill(new Rect(x+32+i*14,126,6,6),pip);
-            }
-            if(scored && age<.85f)
-            {
-                color.a=Mathf.Clamp01(1-age/.85f);
-                pointStyle.normal.textColor=color;
-                GUI.Label(new Rect(x+78,56-age*16,45,32),"+1",pointStyle);
+                float size=scored && i==score-1 ? 6+pop*5 : 6;
+                Fill(new Rect(x+35+i*14-size*.5f,129-size*.5f,size,size),pip);
             }
             if(versus.SoftenedSide==side)
             {
@@ -626,18 +626,7 @@ namespace Naispo.Interaction
 
         void DrawVictory()
         {
-            float x=versus.Winner<0 ? 320 : 960;
-            Color color=PlayerColor(versus.Winner);
-            // The crown sits on the winning player's own half of the court.
-            Vector2 a=new Vector2(x-22,279), b=new Vector2(x-17,301);
-            Stroke(a,b,3,color); Stroke(b,new Vector2(x+17,301),3,color);
-            Stroke(new Vector2(x+17,301),new Vector2(x+22,279),3,color);
-            Stroke(a,new Vector2(x-10,286),3,color);
-            Stroke(new Vector2(x-10,286),new Vector2(x,272),3,color);
-            Stroke(new Vector2(x,272),new Vector2(x+10,286),3,color);
-            Stroke(new Vector2(x+10,286),new Vector2(x+22,279),3,color);
-            winStyle.normal.textColor=color;
-            GUI.Label(new Rect(x-90,307,180,54),"WIN",winStyle);
+            DrawBattleVictory();
         }
 
         void DrawRoundClear()
@@ -709,6 +698,7 @@ namespace Naispo.Interaction
         void OnEnable() { if(configured) ApplySimulationState(); }
         void OnDisable()
         {
+            SyncBattleSuspension();
             if(ball==null) return;
             ball.CancelBarrierImpact();
             ball.SetGameplaySimulation(false);
