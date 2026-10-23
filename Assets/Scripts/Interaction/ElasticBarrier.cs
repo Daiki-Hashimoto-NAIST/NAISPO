@@ -17,13 +17,32 @@ namespace Naispo.Interaction
         float length = 1, softness, offset, velocity;
         float bendLimit, frequency;
         AirHockeyBall heldBall;
-        Vector2 rebound;
+        Vector2 impactIncoming;
+        Vector2 leftHandVelocity, rightHandVelocity;
+        double handMotionAt=double.NegativeInfinity;
+        float returnStrength=1, impactBoost;
         float impactAge, impactDuration, impactDepth, impactStart, impactSide, impactPoint=.5f, ballPoint, ballGap;
         float bendPoint=.5f;
         public float Deflection => offset;
         public float Restitution => material.bounciness;
         public Vector2[] Shape => points;
         public bool IsHoldingBall => heldBall != null;
+
+        public void SetHandMotion(Vector2 leftVelocity,Vector2 rightVelocity,double sampledAt)
+        {
+            leftHandVelocity=leftVelocity;rightHandVelocity=rightVelocity;handMotionAt=sampledAt;
+        }
+        public void ClearHandMotion()
+        {
+            leftHandVelocity=rightHandVelocity=Vector2.zero;
+            handMotionAt=double.NegativeInfinity;impactBoost=0;
+        }
+        public float HandMotionBoost(float along,Vector2 outwardNormal,double now)
+        {
+            if(now<handMotionAt || now-handMotionAt>.15) return 0;
+            float outward=Vector2.Dot(Vector2.Lerp(leftHandVelocity,rightHandVelocity,Mathf.Clamp01(along)),outwardNormal.normalized);
+            return Mathf.InverseLerp(.15f,2f,outward);
+        }
 
         public void Initialize(EdgeCollider2D collider, LineRenderer renderer)
         {
@@ -62,7 +81,8 @@ namespace Naispo.Interaction
             {
                 if(edge==null || !edge.enabled || !heldBall.isActiveAndEnabled) { CancelImpact(true); return; }
                 if(heldBall.CooperativeGame==null) { CancelImpact(true); return; }
-                if(!heldBall.CooperativeGame.CanAdvanceBall) return;
+                if(!heldBall.CooperativeGame.CanAdvanceBall) { ClearHandMotion();return; }
+                UpdateImpactBoost();
                 impactAge+=Mathf.Max(0,dt);
                 float t=Mathf.Clamp01(impactAge/impactDuration);
                 // Compress, linger at full load, then snap back. The whole game
@@ -74,7 +94,7 @@ namespace Naispo.Interaction
                 if(t>=1)
                 {
                     velocity=-impactDepth*frequency*.18f;
-                    CompleteImpact(rebound);
+                    CompleteImpact(CurrentRebound());
                 }
                 return;
             }
@@ -119,8 +139,15 @@ namespace Naispo.Interaction
             float speed = Mathf.Abs(Vector2.Dot(collision.relativeVelocity,transform.up));
             float side = transform.InverseTransformPoint(ball.position).y;
             var gameBall = ball.GetComponent<AirHockeyBall>();
-            if(gameBall != null && gameBall.GravityGame && gameBall.CooperativeGame != null &&
-                TryHoldBall(gameBall,side,speed)) return;
+            if(gameBall != null && gameBall.GravityGame && gameBall.CooperativeGame != null)
+            {
+                // Recover the incoming world velocity, before the solver's moving-wall
+                // impulse. Only our filtered hand samples may add swing acceleration.
+                Vector2 incoming=IncomingVelocity(collision);
+                if(TryHoldBall(gameBall,side,speed,incoming)) return;
+                RemoveUnfilteredImpulse(gameBall,incoming);
+                return;
+            }
             Kick(speed,side > 0 ? -1 : 1);
             if(gameBall != null && gameBall.GravityGame)
             {
@@ -130,20 +157,39 @@ namespace Naispo.Interaction
                     : LightCoinGame.BoostReflection(ball.linearVelocity,normal,softness);
             }
         }
-        bool TryHoldBall(AirHockeyBall ball,float side,float speed)
+        Vector2 IncomingVelocity(Collision2D collision)
+        {
+            var contact=collision.GetContact(0);
+            Vector2 surface=edge.attachedRigidbody!=null ? edge.attachedRigidbody.GetPointVelocity(contact.point) : Vector2.zero;
+            return surface+contact.relativeVelocity;
+        }
+        void OnCollisionStay2D(Collision2D collision)
+        {
+            if(collision.rigidbody==null || collision.contactCount==0) return;
+            var ball=collision.rigidbody.GetComponent<AirHockeyBall>();
+            if(ball!=null && ball.GravityGame && ball.CooperativeGame!=null)
+                RemoveUnfilteredImpulse(ball,IncomingVelocity(collision));
+        }
+        static void RemoveUnfilteredImpulse(AirHockeyBall ball,Vector2 incoming)
+        {
+            // During the same-contact cooldown a moving barrier can catch the ball
+            // again. Enter and Stay both run after the solver, so undo its impulse.
+            if(!ball.IsInBarrierImpact && ball.CooperativeGame.CanAdvanceBall)
+                ball.Body.linearVelocity=Vector2.ClampMagnitude(incoming,ball.maximumSpeed);
+        }
+        bool TryHoldBall(AirHockeyBall ball,float side,float speed,Vector2 incoming)
         {
             if(IsHoldingBall) return false;
             if(ball.CooperativeGame.TryScoreFloorBeforeBarrier(ball.Body.position)) return true;
-            Vector2 normal=(Vector2)transform.up*(side>=0 ? 1 : -1);
-            Vector2 incoming=ball.Body.linearVelocity;
             if(!ball.BeginBarrierImpact(this)) return false;
-            Vector2 outgoing=ball.CooperativeGame.PlayerBarrierBounce(incoming,normal,softness,ball.Body.position,PlayerSide);
-            heldBall=ball; rebound=outgoing;
+            heldBall=ball;impactIncoming=incoming;
+            returnStrength=ball.CooperativeGame.RegisterBarrierReturn(PlayerSide);
             Vector2 local=transform.InverseTransformPoint(ball.Body.position);
             ballPoint=Mathf.Clamp01(local.x/length+.5f);
             impactPoint=Mathf.Clamp(ballPoint,.04f,.96f);
             bendPoint=impactPoint;
             impactSide=side>=0 ? 1 : -1;
+            impactBoost=0;UpdateImpactBoost();
             Vector3 scale=ball.transform.lossyScale;
             ballGap=ball.GetComponent<CircleCollider2D>().radius*Mathf.Max(Mathf.Abs(scale.x),Mathf.Abs(scale.y))+edge.edgeRadius+.025f;
             impactStart=offset;
@@ -154,6 +200,20 @@ namespace Naispo.Interaction
             velocity=0;
             Draw(); PositionHeldBall();
             return true;
+        }
+        void UpdateImpactBoost()
+        {
+            double now=Time.unscaledTimeAsDouble;
+            if(now<handMotionAt || now-handMotionAt>.15) { impactBoost=0;return; }
+            Vector2 normal=(Vector2)transform.up*impactSide;
+            impactBoost=Mathf.Max(impactBoost,HandMotionBoost(ballPoint,normal,now));
+        }
+        Vector2 CurrentRebound()
+        {
+            if(heldBall==null || heldBall.CooperativeGame==null) return Vector2.zero;
+            UpdateImpactBoost();
+            Vector2 normal=(Vector2)transform.up*impactSide;
+            return heldBall.CooperativeGame.BarrierBounce(impactIncoming,normal,softness,heldBall.Body.position,impactBoost)*returnStrength;
         }
         void PositionHeldBall()
         {
@@ -173,11 +233,12 @@ namespace Naispo.Interaction
             if(!IsHoldingBall) return;
             offset=velocity=0;
             if(release && (heldBall.CooperativeGame==null || heldBall.CooperativeGame.CanAdvanceBall)) PositionHeldBall();
-            CompleteImpact(release ? rebound : Vector2.zero);
+            CompleteImpact(release ? CurrentRebound() : Vector2.zero);
             Draw();
         }
         public void ResetSpring()
         {
+            ClearHandMotion();
             CancelImpact(true);
             offset=velocity=0; bendPoint=.5f;
             if(edge!=null && line!=null) Draw();

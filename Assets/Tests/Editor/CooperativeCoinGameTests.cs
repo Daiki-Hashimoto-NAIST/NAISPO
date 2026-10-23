@@ -88,8 +88,8 @@ namespace Naispo.Tests
                 Vector2 left=CooperativeCoinGame.CooperativeReflection(Vector2.zero,Vector2.up,width,-4.4f,speed);
                 Vector2 right=CooperativeCoinGame.CooperativeReflection(Vector2.zero,Vector2.up,width,4.4f,speed);
                 Assert.That(left.magnitude,Is.LessThan(previous));
-                Assert.That(left.x,Is.GreaterThan(0)); Assert.That(left.y,Is.GreaterThan(0));
-                Assert.That(right.x,Is.EqualTo(-left.x).Within(.001f));
+                Assert.That(left.x,Is.EqualTo(0).Within(.001f)); Assert.That(left.y,Is.GreaterThan(0));
+                Assert.That(right.x,Is.EqualTo(left.x).Within(.001f));
                 Assert.That(right.y,Is.EqualTo(left.y).Within(.001f));
                 previous=left.magnitude;
             }
@@ -110,27 +110,62 @@ namespace Naispo.Tests
             }
         }
 
-        [Test] public void FlatBarrierPassesInwardAndTiltCanChangeAimWithoutExcessSpeed()
+        [Test] public void FlatBarrierReflectsVerticallyOnBothCourtsWithoutAnAutomaticPass()
         {
-            Vector2 left=CooperativeCoinGame.CooperativeReflection(Vector2.zero,Vector2.up,.5f,-4.4f,8.4f);
-            Vector2 right=CooperativeCoinGame.CooperativeReflection(Vector2.zero,Vector2.up,.5f,4.4f,8.4f);
-            Assert.That(left.x,Is.GreaterThan(2)); Assert.That(right.x,Is.LessThan(-2));
-            Assert.That(left.y,Is.GreaterThan(6.5f));
-            Vector2 aimed=CooperativeCoinGame.CooperativeReflection(Vector2.zero,new Vector2(.5f,1),.5f,-4.4f,8.4f);
-            Assert.That(aimed.x,Is.GreaterThan(left.x));
-            Assert.That(aimed.magnitude,Is.LessThan(9.5f));
-            Vector2 narrow=CooperativeCoinGame.CooperativeReflection(Vector2.zero,Vector2.up,0,-4.4f,8.4f);
-            Vector2 wide=CooperativeCoinGame.CooperativeReflection(Vector2.zero,Vector2.up,1,-4.4f,8.4f);
-            Assert.That(narrow.y,Is.GreaterThan(wide.y));
-            Assert.That(CooperativeCoinGame.CooperativeReflection(Vector2.zero,Vector2.down,0,0,8.4f).y,Is.LessThan(0));
-            float height=left.y*left.y/(2*9.81f*.55f)-2.25f;
-            Assert.That(height,Is.InRange(2.3f,3.5f),"A default pass should reach the central arc without launching into the HUD.");
-            float demoTilt=5*Mathf.Deg2Rad;
-            Vector2 demo=CooperativeCoinGame.CooperativeReflection(Vector2.zero,
-                new Vector2(Mathf.Sin(demoTilt),Mathf.Cos(demoTilt)),.5833333f,-4.44f,8.4f);
-            float centerTime=4.44f/demo.x;
-            float centerY=-2.35f+demo.y*centerTime-.5f*9.81f*.55f*centerTime*centerTime;
-            Assert.That(Mathf.Abs(centerY-2.4f),Is.LessThan(.49f),"Initial demo hand width and tilt must reach the middle coin.");
+            foreach(float court in new[] {-4.4f,4.4f})
+            {
+                Vector2 returned=CooperativeCoinGame.CooperativeReflection(Vector2.down*8,Vector2.up,.5f,court,8.4f);
+                Assert.That(returned.x,Is.EqualTo(0).Within(.0001f));
+                Assert.That(returned.y,Is.GreaterThan(0));
+            }
+        }
+
+        [TestCase(-3f)]
+        [TestCase(3f)]
+        public void FlatBarrierKeepsTheIncomingHorizontalDirectionAndReflectionAngle(float horizontal)
+        {
+            Vector2 returned=CooperativeCoinGame.CooperativeReflection(new Vector2(horizontal,-6),Vector2.up,.5f,-4.4f,8.4f);
+            Vector2 expected=new Vector2(horizontal,6).normalized;
+            Assert.That(returned.normalized.x,Is.EqualTo(expected.x).Within(.0001f));
+            Assert.That(returned.normalized.y,Is.EqualTo(expected.y).Within(.0001f));
+        }
+
+        [Test] public void TiltedBarrierUsesItsNormalRatherThanAimingAtTheOtherCourt()
+        {
+            Vector2 returned=CooperativeCoinGame.CooperativeReflection(Vector2.down*8,new Vector2(.5f,1),.5f,4.4f,8.4f);
+            Assert.That(returned.normalized.x,Is.EqualTo(.8f).Within(.0001f));
+            Assert.That(returned.normalized.y,Is.EqualTo(.6f).Within(.0001f));
+            Vector2 alreadyLeaving=CooperativeCoinGame.CooperativeReflection(new Vector2(3,6),Vector2.up,.5f,-4.4f,8.4f);
+            Assert.That(Vector2.Angle(alreadyLeaving,new Vector2(3,6)),Is.LessThan(.01f),"A separating velocity must not be reflected back into the barrier.");
+        }
+
+        [Test] public void IncomingSpeedIsPreservedBetweenTheLowSpeedAssistAndSafetyLimit()
+        {
+            Vector2 slow=CooperativeCoinGame.CooperativeReflection(Vector2.down*7.3f,Vector2.up,.4f,0,8.4f);
+            Vector2 fast=CooperativeCoinGame.CooperativeReflection(Vector2.down*8.1f,Vector2.up,.4f,0,8.4f);
+            Assert.That(fast.magnitude/slow.magnitude,Is.EqualTo(8.1f/7.3f).Within(.0001f));
+            Vector2 stopped=CooperativeCoinGame.CooperativeReflection(Vector2.zero,Vector2.up,.4f,0,8.4f);
+            Vector2 crawling=CooperativeCoinGame.CooperativeReflection(Vector2.down*.2f,Vector2.up,.4f,0,8.4f);
+            Assert.That(stopped.y,Is.GreaterThan(4),"A nearly stationary ball must still leave a stationary barrier.");
+            Assert.That(crawling.magnitude,Is.EqualTo(stopped.magnitude).Within(.0001f));
+            Assert.That(slow.magnitude,Is.GreaterThan(stopped.magnitude));
+        }
+
+        [TestCase(6.5f)]
+        [TestCase(10.5f)]
+        public void HandMotionAddsAtMostTwentyPercentWithoutChangingTheReflectionDirection(float speed)
+        {
+            Vector2 incoming=new Vector2(3,-8);
+            Vector2 ordinary=CooperativeCoinGame.CooperativeReflection(incoming,Vector2.up,.5f,0,speed);
+            Vector2 half=CooperativeCoinGame.CooperativeReflection(incoming,Vector2.up,.5f,0,speed,.5f);
+            Vector2 full=CooperativeCoinGame.CooperativeReflection(incoming,Vector2.up,.5f,0,speed,1);
+            Vector2 extreme=CooperativeCoinGame.CooperativeReflection(incoming*100,Vector2.up,0,0,speed,100);
+            Assert.That(half.magnitude,Is.EqualTo(ordinary.magnitude*1.1f).Within(.0001f));
+            Assert.That(full.magnitude,Is.EqualTo(ordinary.magnitude*1.2f).Within(.0001f));
+            Assert.That(Vector2.Angle(full,ordinary),Is.LessThan(.01f));
+            Assert.That(extreme.magnitude,Is.EqualTo(speed*1.14f*1.2f).Within(.0001f));
+            Assert.That(CooperativeCoinGame.CooperativeReflection(incoming,Vector2.up,.5f,0,speed,-1).magnitude,
+                Is.EqualTo(ordinary.magnitude).Within(.0001f));
         }
     }
 }

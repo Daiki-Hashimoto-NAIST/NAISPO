@@ -43,7 +43,7 @@ namespace Naispo.Interaction
     public sealed partial class CooperativeCoinGame : MonoBehaviour
     {
         public const int CoinsPerRound = 9;
-        const float MaximumBallSpeedFactor = 1.18f;
+        const float MaximumBallSpeedFactor = 1.37f;
         public Font GuiFont;
         [SerializeField, Range(1f,3.1f)] float netHeight = 2f;
         [SerializeField, Range(6.5f,10.5f)] float ballSpeed = 8.4f;
@@ -452,13 +452,15 @@ namespace Naispo.Interaction
             return (coin-(from+delta*t)).sqrMagnitude<=radius*radius;
         }
 
-        public Vector2 BarrierBounce(Vector2 velocity,Vector2 normal,float softness,Vector2 position)
+        public Vector2 BarrierBounce(Vector2 velocity,Vector2 normal,float softness,Vector2 position,float handBoost=0)
         {
-            return CooperativeReflection(velocity,normal,softness,position.x-center.x,ballSpeed);
+            return CooperativeReflection(velocity,normal,softness,position.x-center.x,ballSpeed,handBoost);
         }
+        internal float RegisterBarrierReturn(int playerSide) =>
+            IsVersus && CanAdvanceBall ? versus.RegisterReturn(playerSide) : 1;
         public Vector2 PlayerBarrierBounce(Vector2 velocity,Vector2 normal,float softness,Vector2 position,int playerSide)
         {
-            float strength=IsVersus && CanAdvanceBall ? versus.RegisterReturn(playerSide) : 1;
+            float strength=RegisterBarrierReturn(playerSide);
             return BarrierBounce(velocity,normal,softness,position)*strength;
         }
 
@@ -489,21 +491,19 @@ namespace Naispo.Interaction
             else BeginServe(1.6f);
             return true;
         }
-        public static Vector2 CooperativeReflection(Vector2 velocity,Vector2 normal,float softness,float ballX,float speed)
+        public static Vector2 CooperativeReflection(Vector2 velocity,Vector2 normal,float softness,float ballX,float speed,float handBoost=0)
         {
-            normal.Normalize();
+            normal=normal.sqrMagnitude>.0001f ? normal.normalized : Vector2.up;
             float width=Mathf.Clamp01(softness);
-            // Keep an ordinary hand span close to the original pass, but let wide
-            // hands absorb much more energy. The two extremes differ by almost 2x.
-            float reboundSpeed=speed*Mathf.Lerp(1.14f,.58f,width*width);
-            // A flat barrier gives a gentle pass. Players can steer by tilting either hand.
-            // Underside contacts retain their downward direction instead of teleporting upward.
-            if(normal.y<.05f)
-                return Vector2.ClampMagnitude(velocity+normal*Mathf.Max(0,reboundSpeed*.85f-Vector2.Dot(velocity,normal)),reboundSpeed);
-            float inward=ballX<0 ? 1f : -1f;
-            float aim=Mathf.Clamp(inward*.43f+normal.x*.85f+velocity.x*.012f,-.85f,.85f);
-            Vector2 direction=new Vector2(aim,Mathf.Max(.62f,normal.y)).normalized;
-            return direction*reboundSpeed;
+            // No court-side steering: preserve incidence and the tangential direction.
+            // If a held barrier has rotated past the incoming path, let the ball leave.
+            Vector2 reflected=velocity-2*Mathf.Min(0,Vector2.Dot(velocity,normal))*normal;
+            Vector2 direction=reflected.sqrMagnitude>.0001f ? reflected.normalized : normal;
+            // A low-speed floor keeps a stationary barrier playable. Above that floor,
+            // incoming speed matters; wide hands still absorb more of the return.
+            float reboundSpeed=Mathf.Max(velocity.magnitude,speed*.85f)*Mathf.Lerp(1.14f,.58f,width*width);
+            reboundSpeed=Mathf.Min(reboundSpeed,speed*1.14f);
+            return direction*reboundSpeed*(1+.2f*Mathf.Clamp01(handBoost));
         }
 
         void EnsureStyles()

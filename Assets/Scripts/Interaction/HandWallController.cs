@@ -35,7 +35,9 @@ namespace Naispo.Interaction
         readonly uint[] owners = new uint[3];
         readonly bool[] active = new bool[3];
         readonly HandPoseStabilizer[] stabilized = {new HandPoseStabilizer(),new HandPoseStabilizer(),new HandPoseStabilizer()};
+        readonly HandMotionEstimator[] handMotion = {new HandMotionEstimator(),new HandMotionEstimator(),new HandMotionEstimator()};
         BodyTrackingSource lastSource;
+        KinectViewportMapper lastMapper;
         int lastGeneration=-1,lastMapRevision=-1;
         bool stabilizeTracking;
         [Min(0)] public float trackingGraceSeconds=.25f;
@@ -108,19 +110,21 @@ namespace Naispo.Interaction
         void FixedUpdate()
         {
             if (manager == null) return;
+            var source=manager.source;
+            if(!manager.isActiveAndEnabled||!manager.useHandWalls||source==null||!source.isActiveAndEnabled||!source.WorkerAlive||source.HasFailed||source.IsReconfiguring)
+            { ResetTracking();return; }
+            if(source!=lastSource||source.CaptureGeneration!=lastGeneration||manager.mapper!=lastMapper||manager.mapper.Revision!=lastMapRevision)
+            {
+                ResetTracking();lastSource=source;lastGeneration=source.CaptureGeneration;
+                lastMapper=manager.mapper;lastMapRevision=manager.mapper.Revision;
+            }
             if(stabilizeTracking)ApplyStabilized(Time.unscaledTimeAsDouble);
-            else Apply(manager.CurrentFrame, manager.Registry, manager.mapper, manager.IsFresh && manager.useHandWalls);
+            else Apply(manager.CurrentFrame, manager.Registry, manager.mapper, manager.IsFresh,
+                manager.FrameRevision,manager.LastFrameReceivedAt,Time.unscaledTimeAsDouble);
         }
 
         void ApplyStabilized(double now)
         {
-            var source=manager.source;
-            if(!manager.isActiveAndEnabled||!manager.useHandWalls||source==null||!source.isActiveAndEnabled||!source.WorkerAlive||source.HasFailed||source.IsReconfiguring)
-            { ResetTracking();return; }
-            if(source!=lastSource||source.CaptureGeneration!=lastGeneration||manager.mapper.Revision!=lastMapRevision)
-            {
-                ResetTracking();lastSource=source;lastGeneration=source.CaptureGeneration;lastMapRevision=manager.mapper.Revision;
-            }
             var frame=manager.CurrentFrame;
             for(int slot=0;slot<3;slot++)
             {
@@ -136,18 +140,21 @@ namespace Naispo.Interaction
                 if(filtered.Holding)
                 {
                     // Keep the actual last applied pose, with no continuing kinematic impulse.
+                    ClearMotion(slot);
                     walls[slot].attachedRigidbody.linearVelocity=Vector2.zero;
                     walls[slot].attachedRigidbody.angularVelocity=0;
                     continue;
                 }
-                ApplyPose(slot,filtered.Left,filtered.Right,filtered.SeparationMeters,filtered.Owner);
+                bool reset=ApplyPose(slot,filtered.Left,filtered.Right,filtered.SeparationMeters,filtered.Owner);
+                ApplyMotion(slot,manager.FrameRevision,filtered.Owner,valid,filtered.Left,filtered.Right,
+                    manager.LastFrameReceivedAt,now,reset);
             }
         }
 
         public void ResetTracking()
         {
             for(int slot=0;slot<3;slot++) { stabilized[slot].Reset();Hide(slot); }
-            lastSource=null;lastGeneration=lastMapRevision=-1;
+            lastSource=null;lastMapper=null;lastGeneration=lastMapRevision=-1;
         }
 
         public static bool TryEndpoints(BodyFrameData.HandPair hands, KinectViewportMapper mapper, out Vector2 left, out Vector2 right)
@@ -165,6 +172,17 @@ namespace Naispo.Interaction
 
         public void Apply(BodyFrameData frame, BodyColorRegistry registry, KinectViewportMapper mapper, bool fresh)
         {
+            // Legacy callers supply poses without a receipt clock; they cannot infer a swing.
+            Apply(frame,registry,mapper,fresh,0,double.NegativeInfinity,Time.unscaledTimeAsDouble);
+        }
+
+        public void Apply(BodyFrameData frame, BodyColorRegistry registry, KinectViewportMapper mapper, bool fresh,
+            long frameRevision,double receivedAt,double now)
+        {
+            if(mapper!=lastMapper||mapper.Revision!=lastMapRevision)
+            {
+                ResetTracking();lastMapper=mapper;lastMapRevision=mapper.Revision;
+            }
             for (int slot = 0; slot < 3; slot++)
             {
                 int index = -1;
@@ -173,10 +191,29 @@ namespace Naispo.Interaction
                         if (registry.BodyIndexToSlot[i] == slot) { index = i; break; }
                 if (index < 0 || !TryEndpoints(frame.Hands[index], mapper, out var left, out var right))
                 { Hide(slot); continue; }
-                ApplyPose(slot,left,right,frame.Hands[index].SeparationMeters,frame.BodyIds[index]);
+                bool reset=ApplyPose(slot,left,right,frame.Hands[index].SeparationMeters,frame.BodyIds[index]);
+                ApplyMotion(slot,frameRevision,frame.BodyIds[index],true,left,right,receivedAt,now,reset);
             }
         }
-        void ApplyPose(int slot,Vector2 left,Vector2 right,float meters,uint owner)
+
+        void ApplyMotion(int slot,long revision,uint owner,bool valid,Vector2 left,Vector2 right,
+            double receivedAt,double now,bool poseReset)
+        {
+            var motion=handMotion[slot];
+            if(poseReset)ClearMotion(slot);
+            motion.Observe(revision,owner,valid,left,right,receivedAt,now);
+            if(motion.TryGetVelocity(now,out var leftVelocity,out var rightVelocity,out var sampledAt))
+                barriers[slot].SetHandMotion(leftVelocity,rightVelocity,sampledAt);
+            else barriers[slot].ClearHandMotion();
+        }
+
+        void ClearMotion(int slot)
+        {
+            handMotion[slot].Reset();
+            if(barriers[slot]!=null)barriers[slot].ClearHandMotion();
+        }
+
+        bool ApplyPose(int slot,Vector2 left,Vector2 right,float meters,uint owner)
         {
             var delta=right-left;var center=(left+right)*.5f;
             float angle=Mathf.Atan2(delta.y,delta.x)*Mathf.Rad2Deg;
@@ -189,10 +226,12 @@ namespace Naispo.Interaction
             walls[slot].enabled=true;
             lines[slot].startWidth=lines[slot].endWidth=thickness*(presentationSet ? (gardenPresentation ? .55f : .40f) : 1);
             lines[slot].enabled=true;
+            return reset;
         }
         void Hide(int i)
         {
             active[i] = false;
+            ClearMotion(i);
             if (walls[i] == null) return;
             walls[i].enabled = lines[i].enabled = false;
             barriers[i].ResetSpring();

@@ -48,9 +48,14 @@ namespace Naispo.Tests
 
         void Hit(float localX=0,bool underside=false)
         {
-            Vector2 position=(Vector2)barrier.transform.position+new Vector2(localX,underside ? -1 : 1);
+            HitWithVelocity(Vector2.up*(underside ? 8 : -8),localX,underside);
+        }
+
+        void HitWithVelocity(Vector2 incoming,float localX=0,bool underside=false)
+        {
+            Vector2 position=barrier.transform.TransformPoint(new Vector2(localX,underside ? -1 : 1));
             ball.Body.position=position; ball.transform.position=position;
-            ball.Body.linearVelocity=Vector2.up*(underside ? 8 : -8);
+            ball.Body.linearVelocity=incoming;
             Physics2D.SyncTransforms();
             for(int i=0;i<20 && !ball.IsInBarrierImpact;i++) scene.GetPhysicsScene2D().Simulate(.02f);
             Assert.IsTrue(ball.IsInBarrierImpact,"An actual physics collision must enter the compression phase.");
@@ -107,11 +112,155 @@ namespace Naispo.Tests
                     if(meters<1) narrowSpeed=releasedSpeed;
                     else
                     {
-                        Assert.That(narrowSpeed,Is.GreaterThan(releasedSpeed*1.75f),"Realistic narrow and wide spans must feel clearly different.");
-                        Assert.That(releasedSpeed,Is.GreaterThan(baseSpeed*.55f),"A wide barrier must still return the ball.");
+                        Assert.That(narrowSpeed,Is.GreaterThan(releasedSpeed*1.4f),"Narrow hands must still feel stronger, including when the safety limit caps a fast incoming ball.");
+                        Assert.That(releasedSpeed,Is.GreaterThan(baseSpeed*.5f),"A wide barrier must still return the ball.");
+                        Assert.That(narrowSpeed,Is.LessThanOrEqualTo(baseSpeed*1.14f+.01f));
                     }
                 }
             }
+        }
+
+        [UnityTest]
+        public IEnumerator HorizontalBarrierReflectsVerticalIncidenceUpWithoutPassingToTheOtherCourt()
+        {
+            Hit(); barrier.Step(.25f);
+            Assert.That(ball.Body.linearVelocity.x,Is.EqualTo(0).Within(.001f));
+            Assert.That(ball.Body.linearVelocity.y,Is.EqualTo(8*.58f).Within(.03f),"The collision solver must not discard the incoming speed before the custom bounce.");
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator HorizontalBarrierPreservesTheAngleOfAnObliqueIncomingBall()
+        {
+            HitWithVelocity(new Vector2(-3,-6)); barrier.Step(.25f);
+            Assert.That(ball.Body.linearVelocity.x,Is.LessThan(0),"A ball arriving toward the outer wall must not be redirected to the center.");
+            Assert.That(Vector2.Angle(ball.Body.linearVelocity,new Vector2(-3,6)),Is.LessThan(.05f));
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator TiltedStationaryBarrierReflectsAroundItsOwnNormal()
+        {
+            barrier.transform.rotation=Quaternion.Euler(0,0,-26.56505f);
+            Hit(); barrier.Step(.25f);
+            Assert.That(ball.Body.linearVelocity.normalized.x,Is.EqualTo(.8f).Within(.002f));
+            Assert.That(ball.Body.linearVelocity.normalized.y,Is.EqualTo(.6f).Within(.002f));
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator TurningTheBarrierDuringCompressionChangesTheReleaseDirection()
+        {
+            Hit(); barrier.Step(.07f);
+            barrier.transform.rotation=Quaternion.Euler(0,0,-26.56505f);
+            Physics2D.SyncTransforms();
+            barrier.Step(.18f);
+            Assert.IsFalse(ball.IsInBarrierImpact);
+            Assert.That(ball.Body.linearVelocity.normalized.x,Is.EqualTo(.8f).Within(.002f));
+            Assert.That(ball.Body.linearVelocity.normalized.y,Is.EqualTo(.6f).Within(.002f));
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator FastMovingBarrierCannotAddMoreThanTheControlledTwentyPercentBoost()
+        {
+            barrier.SetSpan(4,.3f,.16f,true);
+            barrier.SetHandMotion(Vector2.up*2,Vector2.up*2,Time.unscaledTimeAsDouble);
+            var handBody=barrier.GetComponent<Rigidbody2D>();
+            handBody.linearVelocity=Vector2.up*6;
+            Hit(); handBody.linearVelocity=Vector2.zero;
+            barrier.Step(.25f);
+            float returned=ball.Body.linearVelocity.magnitude;
+            Assert.That(returned,Is.EqualTo(8*1.14f*1.2f).Within(.03f),"Kinematic collision impulses must not add an uncontrolled second hand-speed bonus.");
+            Assert.That(ball.Body.linearVelocity.x,Is.EqualTo(0).Within(.001f));
+            yield return new WaitForFixedUpdate();
+            Assert.That(ball.Body.linearVelocity.magnitude,Is.EqualTo(returned).Within(.01f),"The global limiter must preserve the intended small hand boost.");
+        }
+
+        [UnityTest]
+        public IEnumerator ContinuingTheHandMovementCannotAddAnotherBoostOnRecontactOrWhileTouching()
+        {
+            var handBody=barrier.GetComponent<Rigidbody2D>();
+            var edge=barrier.GetComponent<EdgeCollider2D>();
+            foreach(bool useHandBoost in new[] {false,true})
+            {
+                handBody.linearVelocity=Vector2.zero;
+                game.RestartGame();
+                double deadline=Time.realtimeSinceStartupAsDouble+3;
+                while(game.WaitingToServe && Time.realtimeSinceStartupAsDouble<deadline) yield return null;
+                Assert.IsTrue(game.CanAdvanceBall);
+                barrier.transform.position=new Vector2(-3,-1.8f);
+                handBody.position=barrier.transform.position;
+                barrier.SetSpan(4,1.5f,.16f,true);
+                if(useHandBoost) barrier.SetHandMotion(Vector2.up*2,Vector2.up*2,Time.unscaledTimeAsDouble);
+                handBody.linearVelocity=Vector2.up*6;
+                Hit(); barrier.Step(.25f);
+                float releasedSpeed=ball.Body.linearVelocity.magnitude;
+                Assert.That(releasedSpeed,Is.EqualTo(8*.58f*(useHandBoost ? 1.2f : 1)).Within(.03f));
+
+                // The wide barrier returns slower than the moving hands, which catch
+                // it during the same-contact cooldown and remain in contact afterward.
+                float startY=handBody.position.y;
+                int touchingSteps=0;
+                for(int step=0;step<12;step++)
+                {
+                    scene.GetPhysicsScene2D().Simulate(.01f);
+                    if(ball.Body.IsTouching(edge)) touchingSteps++;
+                    Assert.IsFalse(ball.IsInBarrierImpact,"The recent contact must not start a second hit-stop.");
+                    Assert.That(ball.Body.linearVelocity.magnitude,Is.LessThanOrEqualTo(releasedSpeed+.03f),
+                        $"Recontact must not add raw solver acceleration (boost {useHandBoost}, step {step}).");
+                }
+                Assert.That(touchingSteps,Is.GreaterThanOrEqualTo(2),"Exercise both the new contact and subsequent touching frames.");
+                Assert.That(handBody.position.y,Is.GreaterThan(startY+.65f),"Hands must keep moving throughout the recontact check.");
+            }
+            handBody.linearVelocity=Vector2.zero;
+        }
+
+        [UnityTest]
+        public IEnumerator HandMotionUsesTheContactPositionAndOnlyFreshOutwardMovement()
+        {
+            barrier.SetHandMotion(Vector2.up*2,Vector2.up*.1f,100);
+            Assert.That(barrier.HandMotionBoost(0,Vector2.up,100.05),Is.EqualTo(1).Within(.001f));
+            Assert.That(barrier.HandMotionBoost(1,Vector2.up,100.05),Is.Zero);
+            Assert.That(barrier.HandMotionBoost(.5f,Vector2.up,100.05),Is.InRange(.4f,.6f));
+            Assert.That(barrier.HandMotionBoost(0,Vector2.down,100.05),Is.Zero,"Pulling away must not strengthen a return.");
+            Assert.That(barrier.HandMotionBoost(0,Vector2.right,100.05),Is.Zero,"Sliding parallel to the surface must not strengthen a return.");
+            Assert.That(barrier.HandMotionBoost(0,Vector2.up,100.16),Is.Zero,"A previous tracked position must not remain an active swing.");
+            barrier.ClearHandMotion();
+            Assert.That(barrier.HandMotionBoost(0,Vector2.up,100.05),Is.Zero);
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator ClearingTrackingDuringCompressionCancelsTheCapturedHandBoost()
+        {
+            barrier.SetHandMotion(Vector2.up*2,Vector2.up*2,Time.unscaledTimeAsDouble);
+            Hit(); barrier.Step(.07f);
+            barrier.ClearHandMotion();
+            barrier.Step(.18f);
+            Assert.That(ball.Body.linearVelocity.magnitude,Is.EqualTo(8*.58f).Within(.03f));
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator MotionDuringCompressionAddsASmallBoostEvenWhenHandsWereInitiallyStill()
+        {
+            Hit(); barrier.Step(.07f);
+            barrier.SetHandMotion(Vector2.up*2,Vector2.up*2,Time.unscaledTimeAsDouble);
+            barrier.Step(.18f);
+            Assert.That(ball.Body.linearVelocity.magnitude,Is.EqualTo(8*.58f*1.2f).Within(.03f));
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator OutdatedHandMovementCancelsAPreviouslyCapturedBoost()
+        {
+            barrier.SetHandMotion(Vector2.up*2,Vector2.up*2,Time.unscaledTimeAsDouble);
+            Hit(); barrier.Step(.07f);
+            barrier.SetHandMotion(Vector2.up*2,Vector2.up*2,Time.unscaledTimeAsDouble-.2);
+            barrier.Step(.18f);
+            Assert.That(ball.Body.linearVelocity.magnitude,Is.EqualTo(8*.58f).Within(.03f));
+            yield break;
         }
 
         [UnityTest]
