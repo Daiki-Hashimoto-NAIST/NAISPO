@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7d1c9a5e4b8f42d1a2c6e9f03b7d5814, type: 3}
+  m_Name: RallyVisualConfig
+  m_EditorClassIdentifier:
+  gardenDeep: {r: 0.012, g: 0.043, b: 0.055, a: 1}
+  gardenGlass: {r: 0.1, g: 0.34, b: 0.38, a: 1}
+  gardenGold: {r: 0.78, g: 0.64, b: 0.34, a: 1}
+  gardenFoliage: {r: 0.13, g: 0.31, b: 0.24, a: 1}
+  gardenCandle: {r: 1, g: 0.79, b: 0.43, a: 1}
+  battleDeep: {r: 0.043, g: 0.027, b: 0.074, a: 1}
+  battleGlass: {r: 0.27, g: 0.19, b: 0.43, a: 1}
+  battleBronze: {r: 0.63, g: 0.43, b: 0.24, a: 1}
+  battleViolet: {r: 0.53, g: 0.33, b: 0.74, a: 1}
+  ballIvory: {r: 1, g: 0.995, b: 0.96, a: 1}
+  ballGold: {r: 0.95, g: 0.79, b: 0.46, a: 1}
+  playerJade: {r: 0.64, g: 0.94, b: 0.8, a: 1}
+  playerGold: {r: 0.94, g: 0.76, b: 0.49, a: 1}
+  collectionBackground: {fileID: 0}
+  battleBackground: {fileID: 0}
+  ball: {fileID: 0}
+  star: {fileID: 0}
+  bud: {fileID: 0}
+  flower: {fileID: 0}
+  fireballIcon: {fileID: 0}
+  timerIcon: {fileID: 0}
+  lightIcon: {fileID: 0}

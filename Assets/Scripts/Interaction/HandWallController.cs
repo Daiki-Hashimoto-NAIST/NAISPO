@@ -14,18 +14,6 @@ namespace Naispo.Interaction
         readonly Color[] baseColors = new Color[3];
         bool presentationSet, gardenPresentation;
         Color presentationColor;
-        bool softened;
-        public bool Softened
-        {
-            get=>softened;
-            set
-            {
-                if(softened==value)return;
-                softened=value;
-                for(int i=0;i<textures.Length;i++) if(textures[i]!=null)
-                { textures[i].SetPixel(0,0,softened ? new Color(.74f,.46f,1) : baseColors[i]); textures[i].Apply(); }
-            }
-        }
         KinectSilhouetteManager manager;
         readonly EdgeCollider2D[] walls = new EdgeCollider2D[3];
         readonly ElasticBarrier[] barriers = new ElasticBarrier[3];
@@ -59,7 +47,7 @@ namespace Naispo.Interaction
             {
                 if(walls[i]==null)continue;
                 baseColors[i]=color;
-                textures[i].SetPixel(0,0,softened ? new Color(.74f,.46f,1) : color);
+                textures[i].SetPixel(0,0,color);
                 textures[i].Apply();
                 lines[i].numCapVertices=garden ? 8 : 2;
                 lines[i].numCornerVertices=4;
@@ -92,7 +80,7 @@ namespace Naispo.Interaction
                 lines[i] = go.AddComponent<LineRenderer>();
                 textures[i] = new Texture2D(1,1);
                 baseColors[i]=colors != null && i < colors.Length ? colors[i] : Color.white;
-                textures[i].SetPixel(0,0,softened ? new Color(.74f,.46f,1) : baseColors[i]);
+                textures[i].SetPixel(0,0,baseColors[i]);
                 textures[i].Apply();
                 materials[i] = new Material(template) { mainTexture = textures[i] };
                 lines[i].sharedMaterial = materials[i];

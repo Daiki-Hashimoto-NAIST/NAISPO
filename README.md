@@ -4,8 +4,8 @@
 
 ## 2つのモード
 
-- **星あつめ**：深緑の「光の庭」で、ボールの光を頼りに隠れた星9個を2人で集めます。集めた数は共有され、ボールを落としても星は失いません。
-- **対戦**：SFアリーナで相手側の床にボールを落とすと1点、3点先取で勝ちです。紫のアイテムを取ると、相手の次の返球が弱くなります。
+- **星あつめ**：魔法の温室で、ボールの光を頼りに隠れた星9個を2人で集めます。集めるたびに周囲のつぼみに命が灯り、全部集めると花が開きます。ボールを落としても取得済みの星は失いません。
+- **対戦**：同じ世界の魔法の決闘場で、相手側の床にボールを落とすと1点、3点先取で勝ちです。火・時計・ランタンの魔法で、球の速さや見え方が変わります。
 
 右下の設定アイコン、または左下のモード名から切り替えられます。詳しいルールと調整値は [ふたりのラリーのガイド](COOPERATIVE_RALLY.md) を参照してください。
 
@@ -27,7 +27,7 @@
 
 Windows x64、Unity 6000.6.5f1、Git LFS、.NET 10 SDKを使用します。ビルド済みの実行ファイルはリポジトリに含めていません。
 
-1. リポジトリの `main` を取得し、リポジトリ内で `git lfs pull` を実行します。SDKのDLLと人体認識モデルを取得します。
+1. 使用するブランチを取得し、リポジトリ内で `git lfs pull` を実行します。SDKのDLLと人体認識モデルを取得します。
 2. PowerShellで `./Tools/KinectWorker/Build.ps1` を実行し、Kinect用のWorkerをビルドします。.NET SDKの場所を指定する場合は `-DotNetPath "path/to/dotnet.exe"` を追加します。
 3. Unityでプロジェクトを開き、`Naispo > Cooperative Rally > Build Windows` を選びます。
 4. リポジトリ直下の **`Run-CooperativeRally.cmd`** を実行します。
@@ -54,6 +54,7 @@ Unity Editorで遊ぶ場合は `Naispo > Cooperative Rally > Open` で専用シ�
 
 - [2人用のルール・操作・カメラ設定](COOPERATIVE_RALLY.md)
 - [2人用の検証記録](Documentation/Validation/cooperative-rally.md)
+- [魔法テーマの画像素材と差し替え方](Documentation/Art/magical-rally-assets.md)
 - [旧コインゲームのルールと調整値](LIGHT_COIN_GAME.md)
 - [ボール照明の仕組みと設定](BALL_LIGHT.md)
 - [弾性バリアの仕組みと設定](ELASTIC_BARRIER.md)
@@ -64,7 +65,7 @@ Unity Editorで遊ぶ場合は `Naispo > Cooperative Rally > Open` で専用シ�
 
 ## 動作確認
 
-2026年10月23日、2人用のWindowsビルドとデモ操作を確認しました。前進中の逆向き返球の修正、物理・演出の重点テストも成功しています。実施したテストと結果は [検証記録](Documentation/Validation/cooperative-rally.md) にあります。
+2026年10月27日、魔法テーマと3種類のアイテムを含む全201件のテストが成功しました。最終Windowsビルドとデモでのモード切り替え・起動・終了も確認しています。実施したテストと画面確認の結果は [検証記録](Documentation/Validation/cooperative-rally.md) にあります。
 
 この版でのKinect実機2台・2人プレイ、最新修正の操作感、長時間の安定性は未確認です。旧1台版で確認した実機動作の記録とは区別しています。
 

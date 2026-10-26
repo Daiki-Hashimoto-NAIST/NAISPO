@@ -4,165 +4,485 @@ namespace Naispo.Interaction
 {
     public sealed partial class CooperativeCoinGame
     {
-        const float ItemTelegraphSeconds = .6f;
-        const float ItemAvailableSeconds = 7f;
+        public const int PickupSlotCount = 2;
+        public const float PickupFirstDelay = .9f;
+        public const float PickupRetryDelay = 2.4f;
+        public const float PickupTelegraphSeconds = .5f;
+        public const float PickupAvailableSeconds = 6f;
+        public const float PickupSeparation = 1.3f;
+        const int PickupSeed = 0x5EED1A7;
+
+        sealed class PickupSlot
+        {
+            public bool Active;
+            public RallySpell Spell;
+            public Vector2 Position;
+            public float Age;
+        }
+
+        sealed class PickupVisual
+        {
+            public GameObject Root;
+            public SpriteRenderer Halo;
+            public readonly GameObject[] TypeRoot = new GameObject[4];
+            public readonly SpriteRenderer[][] Strokes = new SpriteRenderer[4][];
+        }
+
+        struct PickupSweep
+        {
+            public int Slot;
+            public float Along;
+        }
+
         readonly RallyVersusState versus = new RallyVersusState();
-        GameObject versusItemRoot;
-        SpriteRenderer versusItemHalo;
+        readonly PickupSlot[] pickupSlots = new PickupSlot[PickupSlotCount];
+        readonly PickupVisual[] pickupVisuals = new PickupVisual[PickupSlotCount];
+        readonly PickupSweep[] pickupSweeps = new PickupSweep[PickupSlotCount];
+        RallyPickupBag pickupBag = new RallyPickupBag(PickupSeed);
+        System.Random pickupPlacement = new System.Random(PickupSeed);
+        GameObject versusPickupRoot;
+        GameObject ballSpellRoot;
+        SpriteRenderer ballSpellHalo;
+        readonly GameObject[] ballSpellTypeRoot = new GameObject[4];
+        readonly SpriteRenderer[][] ballSpellStrokes = new SpriteRenderer[4][];
+        readonly SpriteRenderer[] lightWarningRing = new SpriteRenderer[20];
         SpriteRenderer versusLeftFloor, versusRightFloor;
-        readonly SpriteRenderer[] versusItemGlyph = new SpriteRenderer[8];
-        Vector2 itemAnchor;
-        float itemAge, itemSpawnDelay;
-        bool itemVisible;
+        bool pickupArmed;
+        int nextPickupSide = -1;
+        float pickupSpawnDelay = -1;
 
         public RallyMode Mode { get; private set; } = RallyMode.StarCollection;
         public bool IsVersus => Mode == RallyMode.Versus;
         public RallyVersusState VersusState => versus;
-        public bool ItemVisible => IsVersus && versus.RallyActive && !versus.Complete && itemVisible;
-        public bool ItemCollectible => ItemVisible && itemAge >= ItemTelegraphSeconds;
-        public Vector2 ItemPosition => ItemPositionAtAge(itemAge);
-        public float ItemAge => itemAge;
-        public float ItemSecondsUntilSpawn => Mathf.Max(0,itemSpawnDelay);
+        public RallySpell ActiveSpell => versus.ActiveSpell;
+        public int SpellOwner => versus.SpellOwner;
+        public float SpellSecondsRemaining => versus.SpellSecondsRemaining;
+        public int PickupCount
+        {
+            get
+            {
+                if (!IsVersus || !versus.RallyActive || versus.Complete) return 0;
+                int count = 0;
+                for (int i = 0; i < pickupSlots.Length; i++) if (pickupSlots[i].Active) count++;
+                return count;
+            }
+        }
+        public float PickupSecondsUntilSpawn => pickupArmed ? Mathf.Max(0, pickupSpawnDelay) : 0;
+
+        public RallyPickupSnapshot GetPickupSnapshot(int slot)
+        {
+            if (slot < 0 || slot >= pickupSlots.Length) return default;
+            var entry = pickupSlots[slot];
+            bool visible = IsVersus && versus.RallyActive && !versus.Complete && entry.Active;
+            bool collectible = visible && entry.Age >= PickupTelegraphSeconds
+                && entry.Age < PickupTelegraphSeconds + PickupAvailableSeconds;
+            return new RallyPickupSnapshot(entry.Spell, entry.Position, entry.Age, visible, collectible);
+        }
 
         public void SetMode(RallyMode mode)
         {
-            if(mode == Mode || (mode != RallyMode.StarCollection && mode != RallyMode.Versus)) return;
+            if (mode == Mode || (mode != RallyMode.StarCollection && mode != RallyMode.Versus)) return;
             Mode = mode;
             RefreshPresentation();
             settingsOpen = false;
             RestartGame();
-            if(configured) RefreshLighting();
+            if (configured) RefreshLighting();
             RefreshVersusArtwork();
+        }
+
+        public bool TryActivateSpell(RallySpell spell)
+        {
+            if (!IsVersus || !CanAdvanceBall || spell == RallySpell.None) return false;
+            if (!versus.TryActivateSpell(spell)) return false;
+            if (spell == RallySpell.Light) BeginLightWarning();
+            else EndLightPhase();
+            return true;
+        }
+
+        public Vector2 ApplyPendingSpellToRebound(Vector2 rebound)
+        {
+            if (!IsVersus || rebound.sqrMagnitude <= 0) return rebound;
+            return rebound * versus.ConsumeSpellMultiplier();
+        }
+
+        internal void RegisterBarrierHit(int playerSide)
+        {
+            if (!IsVersus || !CanAdvanceBall) return;
+            versus.RegisterBarrierHit(playerSide);
+            if (!pickupArmed)
+            {
+                pickupArmed = true;
+                pickupSpawnDelay = PickupFirstDelay;
+            }
+            CancelLightForContact();
         }
 
         void BuildVersusArtwork()
         {
-            versusLeftFloor = Rectangle("Left match floor",new Vector2(center.x-halfWidth*.5f,MatchFloor),
-                new Vector2(halfWidth-.25f,.022f),new Color(.502f,.910f,.957f,.48f),2);
-            versusRightFloor = Rectangle("Right match floor",new Vector2(center.x+halfWidth*.5f,MatchFloor),
-                new Vector2(halfWidth-.25f,.022f),new Color(1,.698f,.549f,.48f),2);
-            versusItemRoot = CreateChild("Soft return item",arenaRoot.transform);
-            var halo = CreateChild("Purple halo",versusItemRoot.transform);
-            versusItemHalo = halo.AddComponent<SpriteRenderer>();
-            versusItemHalo.sprite = haloSprite;
-            versusItemHalo.sortingOrder = 6;
-            halo.transform.localScale = Vector3.one*1.05f;
-
-            // A diamond and downward chevrons remain distinct from the collectible stars.
-            Vector2[] corners = {new Vector2(0,.34f),new Vector2(.34f,0),new Vector2(0,-.34f),new Vector2(-.34f,0)};
-            for(int i=0;i<4;i++)
-                versusItemGlyph[i] = ItemStroke("Diamond "+i,corners[i],corners[(i+1)%4],.035f);
-            versusItemGlyph[4] = ItemStroke("Upper arrow left",new Vector2(-.13f,.12f),new Vector2(0,.015f),.045f);
-            versusItemGlyph[5] = ItemStroke("Upper arrow right",new Vector2(0,.015f),new Vector2(.13f,.12f),.045f);
-            versusItemGlyph[6] = ItemStroke("Lower arrow left",new Vector2(-.13f,-.015f),new Vector2(0,-.12f),.045f);
-            versusItemGlyph[7] = ItemStroke("Lower arrow right",new Vector2(0,-.12f),new Vector2(.13f,-.015f),.045f);
-            versusItemRoot.SetActive(false);
+            versusLeftFloor = Rectangle("Left match floor", new Vector2(center.x - halfWidth * .5f, MatchFloor),
+                new Vector2(halfWidth - .25f, .022f), new Color(PlayerColor(-1).r, PlayerColor(-1).g, PlayerColor(-1).b, .48f), 2);
+            versusRightFloor = Rectangle("Right match floor", new Vector2(center.x + halfWidth * .5f, MatchFloor),
+                new Vector2(halfWidth - .25f, .022f), new Color(PlayerColor(1).r, PlayerColor(1).g, PlayerColor(1).b, .48f), 2);
+            BuildBallSpellArtwork();
+            versusPickupRoot = CreateChild("Spell pickups", arenaRoot.transform);
+            for (int i = 0; i < pickupSlots.Length; i++)
+            {
+                pickupSlots[i] = new PickupSlot();
+                pickupVisuals[i] = BuildPickupVisual(i);
+            }
             RefreshVersusArtwork();
         }
 
-        SpriteRenderer ItemStroke(string name,Vector2 from,Vector2 to,float thickness)
+        PickupVisual BuildPickupVisual(int index)
         {
-            var go = CreateChild(name,versusItemRoot.transform);
-            Vector2 delta = to-from;
-            go.transform.localPosition = (from+to)*.5f;
-            go.transform.localRotation = Quaternion.Euler(0,0,Mathf.Atan2(delta.y,delta.x)*Mathf.Rad2Deg);
-            go.transform.localScale = new Vector3(delta.magnitude,thickness,1);
+            var visual = new PickupVisual();
+            visual.Root = CreateChild("Spell pickup " + (index + 1), versusPickupRoot.transform);
+            var halo = CreateChild("Halo", visual.Root.transform);
+            visual.Halo = halo.AddComponent<SpriteRenderer>();
+            visual.Halo.sprite = haloSprite;
+            visual.Halo.sortingOrder = 6;
+            halo.transform.localScale = Vector3.one * 1.05f;
+            BuildSpellTypes(visual.Root.transform, visual.TypeRoot, visual.Strokes);
+            visual.Root.SetActive(false);
+            return visual;
+        }
+
+        void BuildBallSpellArtwork()
+        {
+            ballSpellRoot = CreateChild("Ball spell", arenaRoot.transform);
+            var halo = CreateChild("Spell halo", ballSpellRoot.transform);
+            ballSpellHalo = halo.AddComponent<SpriteRenderer>();
+            ballSpellHalo.sprite = haloSprite;
+            ballSpellHalo.sortingOrder = 9;
+            halo.transform.localScale = Vector3.one * .72f;
+            BuildSpellTypes(ballSpellRoot.transform, ballSpellTypeRoot, ballSpellStrokes);
+            for (int i = 0; i < lightWarningRing.Length; i++)
+            {
+                float angle = i * Mathf.PI * 2 / lightWarningRing.Length;
+                Vector2 start = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * .30f;
+                Vector2 end = new Vector2(Mathf.Cos(angle + Mathf.PI * 2 / lightWarningRing.Length),
+                    Mathf.Sin(angle + Mathf.PI * 2 / lightWarningRing.Length)) * .30f;
+                lightWarningRing[i] = Stroke("Light warning " + i, ballSpellRoot.transform, start, end, .022f, 11);
+            }
+            ballSpellRoot.SetActive(false);
+        }
+
+        void BuildSpellTypes(Transform parent, GameObject[] roots, SpriteRenderer[][] strokes)
+        {
+            roots[(int)RallySpell.Fireball] = BuildSpellGlyph("Fireball", parent, RallySpell.Fireball, out strokes[(int)RallySpell.Fireball]);
+            roots[(int)RallySpell.Timer] = BuildSpellGlyph("Timer", parent, RallySpell.Timer, out strokes[(int)RallySpell.Timer]);
+            roots[(int)RallySpell.Light] = BuildSpellGlyph("Light", parent, RallySpell.Light, out strokes[(int)RallySpell.Light]);
+        }
+
+        GameObject BuildSpellGlyph(string name, Transform parent, RallySpell spell, out SpriteRenderer[] strokes)
+        {
+            var root = CreateChild(name, parent);
+            Sprite icon = CreateConfiguredSprite(visualConfig != null ? visualConfig.SpellIcon(spell) : null,
+                .52f, "Configured " + name + " icon", true);
+            if (icon != null)
+            {
+                var view = RallySceneryArtwork.AddRenderer(root.transform, "Configured icon", icon,
+                    Color.white, 10, simple: true);
+                view.transform.localPosition = Vector3.zero;
+                strokes = new[] { view };
+                return root;
+            }
+            var list = new System.Collections.Generic.List<SpriteRenderer>();
+            Color color = SpellColor(spell);
+            if (spell == RallySpell.Fireball)
+            {
+                list.Add(Stroke("Flame left", root.transform, new Vector2(-.19f, -.22f), new Vector2(-.03f, .25f), .045f, 10, color));
+                list.Add(Stroke("Flame right", root.transform, new Vector2(.19f, -.22f), new Vector2(.03f, .25f), .045f, 10, color));
+                list.Add(Stroke("Flame base", root.transform, new Vector2(-.16f, -.18f), new Vector2(.16f, -.18f), .04f, 10, color));
+                list.Add(Stroke("Flame core", root.transform, new Vector2(-.08f, -.13f), new Vector2(.02f, .12f), .035f, 10,
+                    new Color(1, .88f, .55f)));
+            }
+            else if (spell == RallySpell.Timer)
+            {
+                const int segments = 12;
+                Vector2 previous = new Vector2(.21f, 0);
+                for (int i = 1; i <= segments; i++)
+                {
+                    float angle = i * Mathf.PI * 2 / segments;
+                    Vector2 point = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * .21f;
+                    list.Add(Stroke("Clock " + i, root.transform, previous, point, .03f, 10, color));
+                    previous = point;
+                }
+                list.Add(Stroke("Clock hand", root.transform, Vector2.zero, Vector2.up * .12f, .03f, 10, color));
+                list.Add(Stroke("Clock hand", root.transform, Vector2.zero, Vector2.right * .10f, .03f, 10, color));
+            }
+            else
+            {
+                list.Add(Stroke("Lantern top", root.transform, new Vector2(0, .26f), new Vector2(0, .18f), .035f, 10, color));
+                list.Add(Stroke("Lantern left", root.transform, new Vector2(-.14f, .18f), new Vector2(-.18f, -.13f), .035f, 10, color));
+                list.Add(Stroke("Lantern right", root.transform, new Vector2(.14f, .18f), new Vector2(.18f, -.13f), .035f, 10, color));
+                list.Add(Stroke("Lantern base", root.transform, new Vector2(-.18f, -.13f), new Vector2(.18f, -.13f), .035f, 10, color));
+                list.Add(Stroke("Lantern eye left", root.transform, new Vector2(-.13f, -.02f), new Vector2(0, .08f), .03f, 10, color));
+                list.Add(Stroke("Lantern eye right", root.transform, new Vector2(.13f, -.02f), new Vector2(0, .08f), .03f, 10, color));
+                list.Add(Stroke("Lantern glow", root.transform, new Vector2(-.07f, -.04f), new Vector2(.07f, -.04f), .055f, 10,
+                    new Color(1, .88f, 1)));
+            }
+            strokes = list.ToArray();
+            return root;
+        }
+
+        static Color SpellColor(RallySpell spell)
+        {
+            if (spell == RallySpell.Fireball) return new Color(1, .63f, .20f);
+            if (spell == RallySpell.Timer) return new Color(.38f, .86f, 1);
+            if (spell == RallySpell.Light) return new Color(.77f, .47f, 1);
+            return Color.white;
+        }
+
+        SpriteRenderer Stroke(string name, Transform parent, Vector2 from, Vector2 to, float thickness, int order)
+            => Stroke(name, parent, from, to, thickness, order, Color.white);
+
+        SpriteRenderer Stroke(string name, Transform parent, Vector2 from, Vector2 to, float thickness, int order, Color color)
+        {
+            var go = CreateChild(name, parent);
+            Vector2 delta = to - from;
+            go.transform.localPosition = (from + to) * .5f;
+            go.transform.localRotation = Quaternion.Euler(0, 0, Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg);
+            go.transform.localScale = new Vector3(delta.magnitude, thickness, 1);
             var stroke = go.AddComponent<SpriteRenderer>();
             stroke.sprite = whiteSprite;
-            stroke.sortingOrder = 7;
+            stroke.color = color;
+            stroke.sortingOrder = order;
             return stroke;
         }
 
         void ResetVersusRally()
         {
-            if(IsVersus) versus.BeginRally();
-            itemVisible = false;
-            itemAge = 0;
-            itemSpawnDelay = Random.Range(1.2f,2.2f);
+            if (IsVersus) versus.BeginRally();
+            ClearPickupSlots();
+            // A point ends the pickup cycle. A spawn delay left over from the previous
+            // rally must not fire during the next serve before a real return. The bag
+            // and placement RNG deliberately survive between points; a match restart
+            // still reseeds them in ResetPickupsForMatch.
+            pickupArmed = false;
+            pickupSpawnDelay = -1;
+            ClearLightPhase();
             RefreshVersusArtwork();
         }
 
-        void UpdateVersus(float dt,Vector2 previousBall,Vector2 currentBall,float pickupRadius)
+        void ResetPickupsForMatch()
         {
-            if(!IsVersus || !versus.RallyActive || versus.Complete || dt<=0) return;
-            if(!itemVisible)
-            {
-                // A serve alone cannot claim an item. Do not stack effects while one is pending.
-                if(versus.LastHitter == 0 || versus.SoftenedSide != 0) return;
-                itemSpawnDelay -= dt;
-                if(itemSpawnDelay<=0) SpawnVersusItem();
-                return;
-            }
+            pickupBag = new RallyPickupBag(PickupSeed);
+            pickupPlacement = new System.Random(PickupSeed);
+            pickupArmed = false;
+            pickupSpawnDelay = -1;
+            nextPickupSide = -1;
+            ClearPickupSlots();
+        }
 
-            float oldAge = itemAge;
-            itemAge += dt;
-            float lifetime = ItemTelegraphSeconds+ItemAvailableSeconds;
-            float availableFrom = Mathf.Max(oldAge,ItemTelegraphSeconds);
-            float availableTo = Mathf.Min(itemAge,lifetime);
-            if(availableFrom<=availableTo && itemAge>=ItemTelegraphSeconds)
+        void ClearPickupSlots()
+        {
+            for (int i = 0; i < pickupSlots.Length; i++)
             {
-                // Clip the ball's sweep to the collectible interval, including slow frames
-                // that cross the end of the warning or the item's disappearance time.
-                float fromT = Mathf.Clamp01((availableFrom-oldAge)/dt);
-                float toT = Mathf.Clamp01((availableTo-oldAge)/dt);
-                Vector2 from = Vector2.Lerp(previousBall,currentBall,fromT)-ItemPositionAtAge(availableFrom);
-                Vector2 to = Vector2.Lerp(previousBall,currentBall,toT)-ItemPositionAtAge(availableTo);
-                if(SweptHit(from,to,Vector2.zero,pickupRadius) && versus.CollectItem())
+                pickupSlots[i].Active = false;
+                pickupSlots[i].Age = 0;
+                pickupSlots[i].Spell = RallySpell.None;
+            }
+        }
+
+        void UpdateVersus(float dt, Vector2 previousBall, Vector2 currentBall, float pickupRadius)
+        {
+            if (!IsVersus || !versus.RallyActive || versus.Complete || dt <= 0) return;
+            int sweepCount = 0;
+            float lifetime = PickupTelegraphSeconds + PickupAvailableSeconds;
+            for (int i = 0; i < pickupSlots.Length; i++)
+            {
+                var entry = pickupSlots[i];
+                if (!entry.Active) continue;
+                float oldAge = entry.Age;
+                entry.Age += dt;
+                float availableFrom = Mathf.Max(oldAge, PickupTelegraphSeconds);
+                float availableTo = Mathf.Min(entry.Age, lifetime);
+                if (availableFrom <= availableTo && entry.Age >= PickupTelegraphSeconds)
                 {
-                    if(battleEffects!=null) battleEffects.Pickup(ItemPosition,versus.LastHitter);
-                    DismissVersusItem();
-                    return;
+                    float fromT = Mathf.Clamp01((availableFrom - oldAge) / dt);
+                    float toT = Mathf.Clamp01((availableTo - oldAge) / dt);
+                    Vector2 from = Vector2.Lerp(previousBall, currentBall, fromT);
+                    Vector2 to = Vector2.Lerp(previousBall, currentBall, toT);
+                    if (SweptHit(from, to, entry.Position, pickupRadius))
+                    {
+                        Vector2 delta = to - from;
+                        float along = delta.sqrMagnitude > 0
+                            ? Mathf.Clamp01(Vector2.Dot(entry.Position - from, delta) / delta.sqrMagnitude)
+                            : 0;
+                        // "Along" must be expressed on the full frame. Each slot only
+                        // sweeps its own clipped window, so a slot whose window ends
+                        // early would otherwise outrank a younger slot hit later in
+                        // the same frame and reverse the final spell.
+                        along = fromT + (toT - fromT) * along;
+                        pickupSweeps[sweepCount++] = new PickupSweep { Slot = i, Along = along };
+                    }
                 }
             }
-            if(itemAge>=lifetime) DismissVersusItem();
+
+            // Multiple intersections are consumed in travel order; the slot index breaks ties.
+            for (int i = 0; i < sweepCount; i++)
+                for (int j = i + 1; j < sweepCount; j++)
+                {
+                    var a = pickupSweeps[i];
+                    var b = pickupSweeps[j];
+                    if (b.Along < a.Along || (Mathf.Approximately(b.Along, a.Along) && b.Slot < a.Slot))
+                    {
+                        pickupSweeps[i] = b;
+                        pickupSweeps[j] = a;
+                    }
+                }
+
+            for (int i = 0; i < sweepCount; i++)
+            {
+                var entry = pickupSlots[pickupSweeps[i].Slot];
+                if (!entry.Active) continue;
+                if (TryActivateSpell(entry.Spell))
+                {
+                    if (battleEffects != null) battleEffects.Pickup(entry.Position, versus.SpellOwner);
+                    entry.Active = false;
+                    entry.Age = 0;
+                }
+            }
+
+            for (int i = 0; i < pickupSlots.Length; i++)
+            {
+                var entry = pickupSlots[i];
+                if (entry.Active && entry.Age >= lifetime)
+                {
+                    entry.Active = false;
+                    entry.Age = 0;
+                }
+            }
+
+            if (!pickupArmed) return;
+            pickupSpawnDelay -= dt;
+            if (pickupSpawnDelay > 0) return;
+            pickupSpawnDelay = PickupRetryDelay;
+            if (PickupCount >= PickupSlotCount) return;
+            TrySpawnPickup();
         }
 
-        void SpawnVersusItem()
+        void TrySpawnPickup()
         {
-            float lowest = Mathf.Max(ArenaFloor+netHeight+.75f,center.y+.25f);
-            float highest = Mathf.Max(lowest,Mathf.Min(center.y+halfHeight*.42f,center.y+halfHeight-1.5f));
-            itemAnchor = new Vector2(center.x+Random.Range(-halfWidth*.36f,halfWidth*.36f),Random.Range(lowest,highest));
-            itemVisible = true;
-            itemAge = 0;
-            itemSpawnDelay = 0;
+            float netTop = ArenaFloor + netHeight;
+            float lower = Mathf.Max(netTop + .7f, MatchFloor + 1.5f);
+            float upper = Mathf.Min(center.y + .4f * halfHeight, center.y + halfHeight - .85f - .75f);
+            if (upper < lower) return;
+            int slot = -1;
+            for (int i = 0; i < pickupSlots.Length; i++)
+                if (!pickupSlots[i].Active) { slot = i; break; }
+            if (slot < 0) return;
+
+            int side = nextPickupSide;
+            nextPickupSide = -nextPickupSide;
+            Vector2 position = default;
+            bool found = false;
+            for (int attempt = 0; attempt < 8; attempt++)
+            {
+                float x = center.x + side * Mathf.Lerp(.22f, .60f, NextPlacement()) * halfWidth;
+                float y = Mathf.Lerp(lower, upper, NextPlacement());
+                var candidate = new Vector2(x, y);
+                bool clear = true;
+                for (int i = 0; i < pickupSlots.Length; i++)
+                    if (pickupSlots[i].Active && Vector2.Distance(pickupSlots[i].Position, candidate) < PickupSeparation)
+                    { clear = false; break; }
+                if (!clear) continue;
+                position = candidate;
+                found = true;
+                break;
+            }
+            if (!found) return;
+
+            pickupSlots[slot].Active = true;
+            pickupSlots[slot].Spell = pickupBag.Next();
+            pickupSlots[slot].Position = position;
+            pickupSlots[slot].Age = 0;
         }
 
-        void DismissVersusItem()
-        {
-            itemVisible = false;
-            itemAge = 0;
-            itemSpawnDelay = Random.Range(4f,7f);
-        }
-
-        Vector2 ItemPositionAtAge(float age) => itemAnchor+Vector2.up*(Mathf.Sin(age*2.1f)*.07f);
+        float NextPlacement() => (float)pickupPlacement.NextDouble();
 
         void RefreshVersusArtwork()
         {
-            if(versusLeftFloor != null) versusLeftFloor.enabled = IsVersus;
-            if(versusRightFloor != null) versusRightFloor.enabled = IsVersus;
-            if(versusItemRoot == null) return;
-            bool visible = ItemVisible;
-            versusItemRoot.SetActive(visible);
-            if(!visible) return;
-            // This method only renders state: pause, camera loss and settings freeze the item.
-            float arrival = Mathf.SmoothStep(0,1,Mathf.Clamp01(itemAge/ItemTelegraphSeconds));
-            float pulse = .97f+.03f*Mathf.Sin(itemAge*4);
-            float fade = Mathf.Clamp01((ItemTelegraphSeconds+ItemAvailableSeconds-itemAge)/.45f);
-            float alpha = Mathf.Lerp(.28f,1,arrival)*fade;
-            versusItemRoot.transform.position = ItemPosition;
-            versusItemRoot.transform.localScale = Vector3.one*Mathf.Lerp(.65f,1,arrival)*pulse*.84f;
-            versusItemHalo.color = new Color(.69f,.47f,1,.22f*alpha);
-            for(int i=0;i<versusItemGlyph.Length;i++)
-                versusItemGlyph[i].color = i<4 ? new Color(.72f,.46f,1,alpha) : new Color(.95f,.83f,1,alpha);
+            if (versusLeftFloor != null) versusLeftFloor.enabled = IsVersus;
+            if (versusRightFloor != null) versusRightFloor.enabled = IsVersus;
+            if (versusPickupRoot != null)
+            {
+                float lifetime = PickupTelegraphSeconds + PickupAvailableSeconds;
+                for (int i = 0; i < pickupSlots.Length; i++)
+                {
+                    var entry = pickupSlots[i];
+                    var visual = pickupVisuals[i];
+                    if (visual == null) continue;
+                    bool visible = IsVersus && versus.RallyActive && !versus.Complete && entry.Active;
+                    visual.Root.SetActive(visible);
+                    if (!visible) continue;
+                    float arrival = Mathf.SmoothStep(0, 1, Mathf.Clamp01(entry.Age / PickupTelegraphSeconds));
+                    float pulse = .97f + .03f * Mathf.Sin(entry.Age * 4);
+                    float fade = Mathf.Clamp01((lifetime - entry.Age) / .35f);
+                    float alpha = Mathf.Lerp(.28f, 1, arrival) * fade;
+                    Color color = SpellColor(entry.Spell);
+                    visual.Root.transform.position = entry.Position;
+                    visual.Root.transform.localScale = Vector3.one * Mathf.Lerp(.65f, 1, arrival) * pulse * .84f;
+                    visual.Halo.color = new Color(color.r, color.g, color.b, .22f * alpha);
+                    for (int type = 1; type < visual.TypeRoot.Length; type++)
+                    {
+                        var root = visual.TypeRoot[type];
+                        if (root == null) continue;
+                        bool active = (int)entry.Spell == type;
+                        root.SetActive(active);
+                        if (!active) continue;
+                        var strokes = visual.Strokes[type];
+                        for (int s = 0; s < strokes.Length; s++)
+                        {
+                            if (strokes[s] == null) continue;
+                            Color stroke = strokes[s].color;
+                            stroke.a = alpha;
+                            strokes[s].color = stroke;
+                        }
+                    }
+                }
+            }
+            if (ballSpellRoot == null || ball == null) return;
+            bool spellVisible = IsVersus && versus.ActiveSpell != RallySpell.None;
+            ballSpellRoot.SetActive(spellVisible);
+            if (!spellVisible) return;
+            ballSpellRoot.transform.position = ball.transform.position;
+            Color activeColor = SpellColor(versus.ActiveSpell);
+            ballSpellHalo.color = new Color(activeColor.r, activeColor.g, activeColor.b, .20f);
+            for (int type = 1; type < ballSpellTypeRoot.Length; type++)
+            {
+                bool active = (int)versus.ActiveSpell == type;
+                if (ballSpellTypeRoot[type] != null) ballSpellTypeRoot[type].SetActive(active);
+            }
+            bool warning = versus.ActiveSpell == RallySpell.Light && LightPhase == RallyLightPhase.Warning;
+            for (int i = 0; i < lightWarningRing.Length; i++)
+            {
+                var ring = lightWarningRing[i];
+                if (ring == null) continue;
+                ring.enabled = warning;
+                if (!warning) continue;
+                Color color = SpellColor(RallySpell.Light);
+                color.a = .72f;
+                ring.color = color;
+            }
+            float warningScale = warning
+                ? Mathf.Lerp(.55f, 1.16f, Mathf.Clamp01(LightPhaseSecondsRemaining / RallyVersusState.LightWarningSeconds))
+                : 1f;
+            ballSpellRoot.transform.localScale = Vector3.one * warningScale;
         }
 
         void CleanupVersusArtwork()
         {
-            Release(versusItemRoot);
+            Release(versusPickupRoot);
+            Release(ballSpellRoot);
             Release(versusLeftFloor != null ? versusLeftFloor.gameObject : null);
             Release(versusRightFloor != null ? versusRightFloor.gameObject : null);
-            versusItemRoot = null;
+            versusPickupRoot = null;
+            ballSpellRoot = null;
             versusLeftFloor = versusRightFloor = null;
+            for (int i = 0; i < pickupVisuals.Length; i++) pickupVisuals[i] = null;
+            for (int i = 0; i < lightWarningRing.Length; i++) lightWarningRing[i] = null;
         }
     }
 }

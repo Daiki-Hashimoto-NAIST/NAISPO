@@ -9,22 +9,26 @@ namespace Naispo.Interaction
         SpriteRenderer[] courtArtwork;
         Texture2D buttonNormal,buttonHover,buttonPressed;
         GUIStyle quietButtonStyle,sliderStyle,sliderThumbStyle;
+        public RallyGardenWorld GardenPresentation => garden;
+        public RallyCyberWorld CyberPresentation => cyber;
 
         void BuildGardenPresentation()
         {
             // Snapshot only the structural court, before balls, stars and items are added.
             courtArtwork=arenaRoot.GetComponentsInChildren<SpriteRenderer>();
             garden=CreateChild("Garden atmosphere",arenaRoot.transform).AddComponent<RallyGardenWorld>();
-            garden.Initialize(halfWidth,ArenaFloor,cameraView);
+            garden.Initialize(halfWidth,ArenaFloor,cameraView,visualConfig);
             cyber=CreateChild("Cyber arena atmosphere",arenaRoot.transform).AddComponent<RallyCyberWorld>();
-            cyber.Initialize(halfWidth,MatchFloor,cameraView);
+            cyber.Initialize(halfWidth,MatchFloor,cameraView,visualConfig);
             RefreshPresentation();
         }
         void RefreshPresentation()
         {
             if(garden!=null)garden.SetVisible(!IsVersus);
             if(battleEffects!=null)battleEffects.SetVisible(IsVersus);
-            if(cyber!=null) { cyber.SetVisible(IsVersus);cyber.SetNet(ArenaFloor+netHeight,MatchFloor); }
+            // The decorative net must mirror the physical collider from its true floor
+            // (ArenaFloor), including the minimum-height setting where it only spans 1 unit.
+            if(cyber!=null) { cyber.SetVisible(IsVersus);cyber.SetNet(ArenaFloor+netHeight,ArenaFloor); }
             if(courtArtwork!=null)for(int i=0;i<courtArtwork.Length;i++)
             {
                 var view=courtArtwork[i];
@@ -33,26 +37,26 @@ namespace Naispo.Interaction
                 if(IsVersus) { view.color=Color.clear;continue; }
                 string name=view.name;
                 if(name.Contains("wash")||name=="Upper boundary") view.color=Color.clear;
-                else if(name.Contains("outer wall")) view.color=new Color(.23f,.38f,.29f,.28f);
-                else if(name=="Left baseline") view.color=new Color(.64f,.94f,.80f,.25f);
-                else if(name=="Right baseline") view.color=new Color(.94f,.76f,.49f,.25f);
-                else if(name=="Low center net") view.color=new Color(.47f,.67f,.48f,.24f);
-                else if(name=="Net top") view.color=new Color(.75f,.86f,.62f,.85f);
-                else view.color=new Color(.60f,.75f,.55f,.36f);
+                else if(name.Contains("outer wall")) view.color=new Color(.055f,.16f,.15f,.30f);
+                else if(name=="Left baseline") view.color=new Color(PlayerColor(-1).r,PlayerColor(-1).g,PlayerColor(-1).b,.28f);
+                else if(name=="Right baseline") view.color=new Color(PlayerColor(1).r,PlayerColor(1).g,PlayerColor(1).b,.28f);
+                else if(name=="Low center net") view.color=new Color(.44f,.63f,.52f,.24f);
+                else if(name=="Net top") view.color=new Color(.86f,.73f,.44f,.85f);
+                else view.color=new Color(.53f,.70f,.55f,.34f);
             }
             if(panelTexture!=null)
             {
-                SetTextureColor(panelTexture,IsVersus?new Color(.055f,.076f,.14f,.97f):new Color(.068f,.15f,.11f,.98f));
-                SetTextureColor(buttonNormal,IsVersus?new Color(.08f,.12f,.19f):new Color(.105f,.21f,.155f));
-                SetTextureColor(buttonHover,IsVersus?new Color(.13f,.21f,.29f):new Color(.17f,.30f,.23f));
-                SetTextureColor(buttonPressed,IsVersus?new Color(.22f,.35f,.42f):new Color(.30f,.44f,.33f));
-                smallStyle.normal.textColor=goalStyle.normal.textColor=IsVersus ? new Color(.65f,.72f,.83f) : new Color(.59f,.70f,.63f);
+                SetTextureColor(panelTexture,IsVersus?new Color(.055f,.040f,.095f,.96f):new Color(.014f,.052f,.058f,.97f));
+                SetTextureColor(buttonNormal,IsVersus?new Color(.10f,.075f,.15f):new Color(.045f,.13f,.13f));
+                SetTextureColor(buttonHover,IsVersus?new Color(.17f,.12f,.24f):new Color(.08f,.21f,.20f));
+                SetTextureColor(buttonPressed,IsVersus?new Color(.25f,.18f,.34f):new Color(.13f,.31f,.28f));
+                smallStyle.normal.textColor=goalStyle.normal.textColor=IsVersus ? new Color(.70f,.66f,.80f) : new Color(.58f,.72f,.68f);
                 leftScoreStyle.normal.textColor=PlayerColor(-1);
                 rightScoreStyle.normal.textColor=PlayerColor(1);
                 titleStyle.normal.textColor=bodyStyle.normal.textColor=centeredStyle.normal.textColor=
-                    IsVersus ? new Color(.90f,.95f,1) : new Color(.95f,.95f,.86f);
-                buttonStyle.normal.textColor=IsVersus ? new Color(.90f,.95f,1) : new Color(.89f,.94f,.87f);
-                quietButtonStyle.normal.textColor=IsVersus ? new Color(.60f,.70f,.79f) : new Color(.66f,.76f,.69f);
+                    IsVersus ? new Color(.92f,.88f,.98f) : new Color(.95f,.94f,.84f);
+                buttonStyle.normal.textColor=IsVersus ? new Color(.92f,.88f,.98f) : new Color(.89f,.94f,.87f);
+                quietButtonStyle.normal.textColor=IsVersus ? new Color(.68f,.62f,.76f) : new Color(.66f,.76f,.69f);
             }
         }
         static Texture2D SolidTexture(Color color)

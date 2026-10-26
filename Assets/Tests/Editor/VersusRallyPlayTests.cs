@@ -95,7 +95,8 @@ namespace Naispo.Tests
             Assert.That(game.IsVersus,Is.True);
             Assert.That(game.VersusState.Winner,Is.Zero);
             Assert.That(game.VersusState.LeftScore+game.VersusState.RightScore,Is.Zero);
-            Assert.That(game.ItemVisible,Is.False);
+            Assert.That(game.PickupCount,Is.Zero);
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
             Assert.That(game.WaitingToServe,Is.True);
         }
 
@@ -160,11 +161,11 @@ namespace Naispo.Tests
         }
 
         [UnityTest]
-        public IEnumerator ModeSwitchClearsItemsAndEffectsAndRestoresLitStars()
+        public IEnumerator ModeSwitchClearsSpellsAndPickupsAndRestoresLitStars()
         {
             HitAndRelease(leftBarrier);
             MoveBall(new Vector2(-6,3));
-            yield return WaitFor(() => game.ItemVisible,3,"A returned rally should introduce an item.");
+            yield return WaitFor(() => game.PickupCount>0,3,"A returned rally should introduce a pickup.");
             game.SetPaused(true);
             MoveBall(Coin(4).transform.position);
             yield return TwoFrames();
@@ -175,11 +176,11 @@ namespace Naispo.Tests
                 Assert.That(game.CoinVisibility(i),Is.Zero);
             }
             // Set a pending effect independently of its artwork so both reset paths are exercised.
-            Assert.That(game.VersusState.CollectItem(),Is.True);
-            Assert.That(game.VersusState.SoftenedSide,Is.EqualTo(1));
+            Assert.That(game.VersusState.TryActivateSpell(RallySpell.Fireball),Is.True);
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.Fireball));
             game.SetMode(RallyMode.StarCollection);
-            Assert.That(game.ItemVisible,Is.False);
-            Assert.That(game.VersusState.SoftenedSide,Is.Zero);
+            Assert.That(game.PickupCount,Is.Zero);
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
             Assert.That(game.VersusState.LastHitter,Is.Zero);
             Assert.That(game.VersusState.Winner,Is.Zero);
             Assert.That(game.TeamScore,Is.Zero);
@@ -190,73 +191,236 @@ namespace Naispo.Tests
             Assert.That(game.CoinVisibility(4),Is.EqualTo(1).Within(.001f));
 
             game.SetMode(RallyMode.Versus);
-            Assert.That(game.ItemVisible,Is.False);
+            Assert.That(game.PickupCount,Is.Zero);
             Assert.That(game.WaitingToServe,Is.True);
             Assert.That(game.VersusState.LeftScore+game.VersusState.RightScore,Is.Zero);
             yield return WaitFor(() => game.CanAdvanceBall,3,"Switching modes must start a fresh match.");
             HitAndRelease(leftBarrier);
-            Assert.That(game.VersusState.CollectItem(),Is.True);
+            Assert.That(game.TryActivateSpell(RallySpell.Fireball),Is.True);
             game.RestartGame();
-            Assert.That(game.VersusState.SoftenedSide,Is.Zero);
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
             Assert.That(game.VersusState.LastHitter,Is.Zero);
-            Assert.That(game.ItemVisible,Is.False);
+            Assert.That(game.PickupCount,Is.Zero);
         }
 
         [UnityTest]
-        public IEnumerator ItemClockFreezesAndSweptPickupWeakensExactlyOneRealOpponentReturn()
+        public IEnumerator PickupClockFreezesAndOneSweepCollectsBothSlotsInTravelOrder()
         {
-            float beforeFirstReturn=game.ItemSecondsUntilSpawn;
-            yield return new WaitForSecondsRealtime(.2f);
-            Assert.That(game.ItemVisible,Is.False);
-            Assert.That(game.ItemSecondsUntilSpawn,Is.EqualTo(beforeFirstReturn).Within(.001f),
-                "The serve cannot start item spawns before anyone returns the ball.");
-            float ordinarySpeed=HitAndRelease(leftBarrier);
+            Assert.That(game.PickupCount,Is.Zero);
+            Assert.That(game.PickupSecondsUntilSpawn,Is.Zero,
+                "The serve cannot start pickup spawns before anyone returns the ball.");
+            HitAndRelease(leftBarrier);
             Assert.That(game.VersusState.LastHitter,Is.EqualTo(-1));
+            Assert.That(game.PickupSecondsUntilSpawn,Is.InRange(.5f,.9f));
             MoveBall(new Vector2(-6,3));
-            float remaining=game.ItemSecondsUntilSpawn;
+            float remaining=game.PickupSecondsUntilSpawn;
             game.SetPaused(true);
             yield return new WaitForSecondsRealtime(.2f);
-            Assert.That(game.ItemSecondsUntilSpawn,Is.EqualTo(remaining).Within(.001f));
+            Assert.That(game.PickupSecondsUntilSpawn,Is.EqualTo(remaining).Within(.001f));
             game.SetInputReady(false); game.SetPaused(false);
             yield return new WaitForSecondsRealtime(.2f);
-            Assert.That(game.ItemSecondsUntilSpawn,Is.EqualTo(remaining).Within(.001f));
+            Assert.That(game.PickupSecondsUntilSpawn,Is.EqualTo(remaining).Within(.001f));
             game.SetInputReady(true);
-            yield return WaitFor(() => game.ItemVisible,3,"The first item must appear after a real return.");
+            yield return WaitFor(() => game.PickupCount>0,3,"The first pickup must appear after a real return.");
 
-            Assert.That(game.ItemCollectible,Is.False,"New items must announce themselves before pickup.");
+            int firstSlot=-1;
+            var first=FindPickup(out firstSlot);
+            Assert.That(first.Visible,Is.True);
+            Assert.That(first.Collectible,Is.False,"New pickups must telegraph before pickup.");
             game.SetPaused(true);
-            Vector2 warningPosition=game.ItemPosition;
-            yield return new WaitForSecondsRealtime(.7f);
-            Assert.That(game.ItemCollectible,Is.False,"Pause must freeze the warning age.");
-            Assert.That(game.ItemPosition,Is.EqualTo(warningPosition));
-            game.SetInputReady(false); game.SetPaused(false);
+            Vector2 warningPosition=first.Position;
+            float warningAge=first.Age;
             yield return new WaitForSecondsRealtime(.2f);
-            Assert.That(game.ItemCollectible,Is.False,"Tracking loss must also freeze the warning age.");
-            Assert.That(game.ItemPosition,Is.EqualTo(warningPosition));
-            game.SetInputReady(true);
-            yield return WaitFor(() => game.ItemCollectible,1.5f,"An unpaused item must become collectible.");
+            Assert.That(game.GetPickupSnapshot(firstSlot).Collectible,Is.False,"Pause must freeze the warning age.");
+            Assert.That(game.GetPickupSnapshot(firstSlot).Age,Is.EqualTo(warningAge).Within(.001f));
+            Assert.That(game.GetPickupSnapshot(firstSlot).Position,Is.EqualTo(warningPosition));
+            game.SetPaused(false);
+            yield return WaitFor(() => game.GetPickupSnapshot(firstSlot).Collectible,1.5f,"An unpaused pickup must become collectible.");
 
-            Vector2 target=game.ItemPosition;
-            MoveBall(target+Vector2.left*1.2f);
-            yield return TwoFrames();
-            Assert.That(game.ItemVisible,Is.True,"The first sweep endpoint must be outside pickup range.");
-            MoveBall(target+Vector2.right*1.2f);
-            yield return TwoFrames();
-            Assert.That(game.ItemVisible,Is.False,$"A fast crossing must collect even with both endpoints outside the item. Target {target}, item {game.ItemPosition}, body {ball.Body.position}, transform {ball.transform.position}, last {game.VersusState.LastHitter}, collectible {game.ItemCollectible}, advance {game.CanAdvanceBall}");
-            Assert.That(game.VersusState.SoftenedSide,Is.EqualTo(1),"The last left return must weaken the right player's next return.");
+            yield return WaitFor(() => game.PickupCount>=2,4,"The second slot must appear one retry interval later.");
+            int secondSlot=-1;
+            var second=FindPickup(out secondSlot,firstSlot);
+            Assert.That(second.Visible,Is.True);
+            Assert.That(secondSlot,Is.Not.EqualTo(firstSlot));
+            Assert.That(Vector2.Distance(first.Position,second.Position),Is.GreaterThanOrEqualTo(CooperativeCoinGame.PickupSeparation-.001f),
+                "Two pickups must remain separated.");
+            float centerX=(game.ServePosition(-1).x+game.ServePosition(1).x)*.5f;
+            Assert.That(first.Position.x,Is.LessThan(centerX));
+            Assert.That(second.Position.x,Is.GreaterThan(centerX),"Spawn halves must alternate.");
+            Assert.That(Mathf.Abs(first.Position.x-centerX),Is.InRange(.22f*game.HalfWidth-.01f,.60f*game.HalfWidth+.01f));
+            Assert.That(first.Position.y,Is.GreaterThanOrEqualTo(Mathf.Max(game.ArenaFloor+game.NetHeight+.7f,game.MatchFloor+1.5f)-.001f));
 
-            float weakenedSpeed=HitAndRelease(rightBarrier);
-            Assert.That(game.VersusState.LastHitter,Is.EqualTo(1));
-            Assert.That(game.VersusState.SoftenedSide,Is.Zero);
-            Assert.That(weakenedSpeed,Is.EqualTo(ordinarySpeed*RallyVersusState.SoftReturnMultiplier).Within(.03f));
-            yield return new WaitForSecondsRealtime(.18f);
-            float restoredSpeed=HitAndRelease(rightBarrier);
-            Assert.That(restoredSpeed,Is.EqualTo(ordinarySpeed).Within(.03f),"The same opponent's following return must regain normal strength.");
+            // Keep both slots occupied long enough to cover a full-capacity attempt.
+            yield return new WaitForSecondsRealtime(1.6f);
+            Assert.That(game.PickupCount,Is.LessThanOrEqualTo(CooperativeCoinGame.PickupSlotCount),
+                "The game must never hold more than two pickup slots.");
+
+            Assert.That(game.GetPickupSnapshot(firstSlot).Collectible,Is.True);
+            Assert.That(game.GetPickupSnapshot(secondSlot).Collectible,Is.True);
+            Vector2 direction=(second.Position-first.Position).normalized;
+            MoveBall(first.Position-direction*1.3f);
+            yield return TwoFrames();
+            Assert.That(game.PickupCount,Is.EqualTo(2),"The preparation point must stay outside pickup range.");
+            MoveBall(second.Position+direction*1.3f);
+            yield return TwoFrames();
+            Assert.That(game.PickupCount,Is.Zero,
+                $"One swept frame must collect both intersections. First {first.Position}, second {second.Position}, body {ball.Body.position}");
+            Assert.That(game.ActiveSpell,Is.EqualTo(second.Spell),
+                "The last intersection in travel order replaces the first spell.");
+            Assert.That(game.SpellOwner,Is.EqualTo(-1));
         }
 
-        float HitAndRelease(ElasticBarrier barrier)
+        [UnityTest]
+        public IEnumerator FireballAndTimerChangeTheNextRealReboundAndKeepTheGlobalCap()
+        {
+            float ordinary=HitAndRelease(rightBarrier);
+            Assert.That(game.TryActivateSpell(RallySpell.Fireball),Is.True);
+            float boosted=HitAndRelease(leftBarrier);
+            Assert.That(boosted,Is.EqualTo(ordinary*RallyVersusState.FireballMultiplier).Within(.03f));
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None),"One release must consume the spell.");
+
+            float ordinaryAgain=HitAndRelease(rightBarrier);
+            Assert.That(ordinaryAgain,Is.EqualTo(ordinary).Within(.03f),"The following return must be ordinary.");
+            Assert.That(game.TryActivateSpell(RallySpell.Timer),Is.True);
+            float slowed=HitAndRelease(leftBarrier);
+            Assert.That(slowed,Is.EqualTo(ordinary*RallyVersusState.TimerMultiplier).Within(.03f));
+
+            Assert.That(game.TryActivateSpell(RallySpell.Fireball),Is.True);
+            float capped=HitAndRelease(rightBarrier,2f);
+            Assert.That(capped,Is.EqualTo(ball.maximumSpeed).Within(.03f),
+                "The existing maximumSpeed must cap a boosted hand return.");
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator PickupDuringCompressionAffectsThatReleaseAndCancellationDoesNotConsume()
+        {
+            float ordinary=HitAndRelease(leftBarrier);
+            BeginHit(rightBarrier);
+            Assert.That(game.VersusState.LastHitter,Is.EqualTo(1));
+            Assert.That(game.TryActivateSpell(RallySpell.Fireball),Is.True,
+                "A pickup collected during compression must be accepted.");
+            rightBarrier.Step(.25f);
+            Assert.That(ball.IsInBarrierImpact,Is.False);
+            Assert.That(ball.Body.linearVelocity.magnitude,Is.EqualTo(ordinary*RallyVersusState.FireballMultiplier).Within(.03f));
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+
+            BeginHit(leftBarrier);
+            Assert.That(game.TryActivateSpell(RallySpell.Timer),Is.True);
+            leftBarrier.CancelImpact(false);
+            Assert.That(ball.IsInBarrierImpact,Is.False);
+            Assert.That(ball.Body.linearVelocity,Is.EqualTo(Vector2.zero));
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.Timer),
+                "A cancelled zero-speed release must not spend the pending spell.");
+            float slowed=HitAndRelease(rightBarrier);
+            Assert.That(slowed,Is.EqualTo(ordinary*RallyVersusState.TimerMultiplier).Within(.03f));
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+            yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator LightRendersAWarningHidesEveryVisualThenCancelsAtTheFloor()
+        {
+            HitAndRelease(leftBarrier);
+            MoveBall(new Vector2(-5,3));
+            Assert.That(game.TryActivateSpell(RallySpell.Light),Is.True);
+            yield return TwoFrames();
+            Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.Warning));
+            Assert.That(game.BallPresentationVisible,Is.True);
+            var ballView=ball.GetComponent<SpriteRenderer>();
+            Assert.That(ballView.enabled,Is.True);
+            var corona=FindRenderer("Cooperative court/Ball corona");
+            Assert.That(corona.enabled,Is.True);
+            var spellRoot=game.transform.Find("Cooperative court/Ball spell");
+            var ring=spellRoot.Find("Light warning 0").GetComponent<SpriteRenderer>();
+            Assert.That(ring.enabled,Is.True,"The contracting warning ring must be rendered before hiding.");
+
+            yield return WaitFor(() => game.LightPhase==RallyLightPhase.Hidden,2,"The warning must hide the ball.");
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.Light));
+            Assert.That(game.LightPhaseSecondsRemaining,Is.LessThanOrEqualTo(RallyVersusState.LightHiddenSeconds));
+            Assert.That(game.LightPhaseSecondsRemaining,Is.GreaterThan(0));
+            Assert.That(game.BallPresentationVisible,Is.False);
+            Assert.That(ballView.enabled,Is.False,"The ivory core must hide with the spell.");
+            Assert.That(corona.enabled,Is.False,"The corona must hide with the core.");
+            Assert.That(FindRenderer("Cooperative court/Ball light").enabled,Is.False);
+            Assert.That(spellRoot.gameObject.activeInHierarchy,Is.False,"All attached spell artwork must hide together.");
+            foreach(var renderer in spellRoot.GetComponentsInChildren<SpriteRenderer>(true))
+                Assert.That(renderer.gameObject.activeInHierarchy,Is.False);
+
+            MoveBall(new Vector2(-6.5f,game.MatchFloor+1.35f));
+            yield return TwoFrames();
+            Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.None),"Entering the floor safety zone must cancel Light.");
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+            Assert.That(game.BallPresentationVisible,Is.True);
+            Assert.That(ballView.enabled,Is.True);
+
+            MoveBall(new Vector2(-5,3));
+            yield return TwoFrames();
+            Assert.That(game.TryActivateSpell(RallySpell.Light),Is.True);
+            yield return null;
+            Assert.That(game.LightPhase,Is.Not.EqualTo(RallyLightPhase.None));
+            BeginHit(leftBarrier);
+            Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.None),"Any hand-barrier contact must cancel Light.");
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+            Assert.That(game.BallPresentationVisible,Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator LightSuspensionFreezesClocksAndReplaysTheWarningBeforeRemainingHidden()
+        {
+            HitAndRelease(leftBarrier);
+            MoveBall(new Vector2(-5,3));
+            Assert.That(game.TryActivateSpell(RallySpell.Light),Is.True);
+            yield return TwoFrames();
+            Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.Warning));
+            float warning=game.LightPhaseSecondsRemaining;
+            game.ExternalOverlayOpen=true;
+            yield return new WaitForSecondsRealtime(.2f);
+            Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.Warning));
+            Assert.That(game.LightPhaseSecondsRemaining,Is.EqualTo(warning).Within(.01f));
+            Assert.That(game.BallPresentationVisible,Is.True);
+            game.ExternalOverlayOpen=false;
+            game.SetInputReady(false);
+            yield return new WaitForSecondsRealtime(.2f);
+            Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.Warning));
+            Assert.That(game.LightPhaseSecondsRemaining,Is.EqualTo(warning).Within(.01f));
+            Assert.That(game.BallPresentationVisible,Is.True);
+            game.SetInputReady(true);
+            game.SetPaused(true);
+            yield return new WaitForSecondsRealtime(.2f);
+            Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.Warning));
+            Assert.That(game.LightPhaseSecondsRemaining,Is.EqualTo(warning).Within(.01f));
+            Assert.That(game.BallPresentationVisible,Is.True,"Suspension must force the hidden ball visible.");
+            game.SetPaused(false);
+
+            yield return WaitFor(() => game.LightPhase==RallyLightPhase.Hidden,2,"Light must hide after its warning.");
+            Assert.That(game.BallPresentationVisible,Is.False);
+            float hidden=game.LightPhaseSecondsRemaining;
+            game.SetPaused(true);
+            yield return new WaitForSecondsRealtime(.2f);
+            Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.Hidden));
+            Assert.That(game.LightPhaseSecondsRemaining,Is.EqualTo(hidden).Within(.01f),"Pause must freeze the hidden clock.");
+            Assert.That(game.BallPresentationVisible,Is.True);
+
+            game.SetPaused(false);
+            yield return TwoFrames();
+            Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.Warning),
+                "Resuming a hidden phase must replay the full warning first.");
+            Assert.That(game.LightPhaseSecondsRemaining,Is.EqualTo(RallyVersusState.LightWarningSeconds).Within(.1f));
+            Assert.That(game.BallPresentationVisible,Is.True);
+            yield return WaitFor(() => game.LightPhase==RallyLightPhase.Hidden,2,"The replayed warning must finish.");
+
+            game.RestartGame();
+            Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.None),"Restart must clear and restore Light immediately.");
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+            Assert.That(game.BallPresentationVisible,Is.True);
+            Assert.That(ball.GetComponent<SpriteRenderer>().enabled,Is.True);
+        }
+
+        float HitAndRelease(ElasticBarrier barrier,float handMotion=0)
         {
             barrier.ResetSpring();
+            if(handMotion>0) barrier.SetHandMotion(Vector2.up*handMotion,Vector2.up*handMotion,Time.unscaledTimeAsDouble);
             MoveBall((Vector2)barrier.transform.position+Vector2.up);
             ball.Body.linearVelocity=Vector2.down*8;
             for(int i=0;i<20 && !ball.IsInBarrierImpact;i++) scene.GetPhysicsScene2D().Simulate(.02f);
@@ -266,6 +430,31 @@ namespace Naispo.Tests
             Assert.That(ball.Body.simulated,Is.True);
             return ball.Body.linearVelocity.magnitude;
         }
+
+        void BeginHit(ElasticBarrier barrier)
+        {
+            barrier.ResetSpring();
+            MoveBall((Vector2)barrier.transform.position+Vector2.up);
+            ball.Body.linearVelocity=Vector2.down*8;
+            for(int i=0;i<20 && !ball.IsInBarrierImpact;i++) scene.GetPhysicsScene2D().Simulate(.02f);
+            Assert.That(ball.IsInBarrierImpact,Is.True,"The test must enter a real barrier collision.");
+        }
+
+        RallyPickupSnapshot FindPickup(out int slot,int excluded=-99)
+        {
+            for(int i=0;i<CooperativeCoinGame.PickupSlotCount;i++)
+            {
+                if(i==excluded) continue;
+                var snapshot=game.GetPickupSnapshot(i);
+                if(!snapshot.Visible) continue;
+                slot=i;
+                return snapshot;
+            }
+            slot=-1;
+            return default;
+        }
+
+        SpriteRenderer FindRenderer(string path) => game.transform.Find(path).GetComponent<SpriteRenderer>();
 
         void MoveBall(Vector2 position)
         {

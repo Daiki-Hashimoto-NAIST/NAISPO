@@ -38,9 +38,11 @@ namespace Naispo.Interaction
         }
         void ApplyTheme(bool garden)
         {
-            outer.startWidth=outer.endWidth=garden?.25f:.16f;
-            inner.startWidth=inner.endWidth=garden?.16f:.10f;
-            for(int i=0;i<ends.Length;i++)ends[i].transform.localScale=Vector3.one*(garden?.42f:.30f);
+            // Thin luminous threads follow the exact deformed source samples. The
+            // physical collider remains the source EdgeCollider2D and is never widened.
+            outer.startWidth=outer.endWidth=garden?.12f:.10f;
+            inner.startWidth=inner.endWidth=garden?.065f:.055f;
+            for(int i=0;i<ends.Length;i++)ends[i].transform.localScale=Vector3.one*(garden?.14f:.11f);
         }
         LineRenderer Layer(string name,float width,int order)
         {
@@ -58,8 +60,8 @@ namespace Naispo.Interaction
             for(int i=0;i<2;i++)ends[i].enabled=show;
             if(!show)return;
             Color color=source.sharedMaterial.mainTexture is Texture2D texture ? texture.GetPixel(0,0) : Color.white;
-            outer.startColor=outer.endColor=new Color(color.r,color.g,color.b,.08f);
-            inner.startColor=inner.endColor=new Color(color.r,color.g,color.b,.14f);
+            outer.startColor=outer.endColor=new Color(color.r,color.g,color.b,.055f);
+            inner.startColor=inner.endColor=new Color(color.r,color.g,color.b,.34f);
             outer.positionCount=inner.positionCount=source.positionCount;
             for(int i=0;i<source.positionCount;i++)
             {

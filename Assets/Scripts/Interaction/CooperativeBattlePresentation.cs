@@ -77,10 +77,31 @@ namespace Naispo.Interaction
             GUIUtility.ScaleAroundPivot(Vector2.one*pop,pivot);
 
             Color dim=color;dim.a=.22f;
-            Fill(new Rect(x-184,211,368,178),new Color(.025f,.045f,.085f,.15f));
             float reach=170*arrival;
             Stroke(new Vector2(x-reach,211),new Vector2(x+reach,211),2,dim);
             Stroke(new Vector2(x-reach,389),new Vector2(x+reach,389),2,dim);
+            // Rune circles and gold sparks replace the old large translucent panel.
+            Color gold=visualConfig!=null?visualConfig.ballGold:new Color(.95f,.79f,.46f);
+            gold.a=.28f+.34f*arrival;
+            for(int side=-1;side<=1;side+=2)
+            {
+                float cx=x+side*142;
+                Vector2 previous=new Vector2(cx+31,300);
+                for(int i=1;i<=16;i++)
+                {
+                    float angle=i*Mathf.PI*2/16;
+                    Vector2 point=new Vector2(cx+Mathf.Cos(angle)*31,300+Mathf.Sin(angle)*31);
+                    Stroke(previous,point,1.3f,gold);previous=point;
+                }
+            }
+            for(int i=0;i<12;i++)
+            {
+                float angle=i*Mathf.PI*2/12+.3f;
+                float inner=92+arrival*34,outer=inner+11;
+                Color spark=gold;spark.a*=.7f;
+                Stroke(new Vector2(x+Mathf.Cos(angle)*inner,292+Mathf.Sin(angle)*inner),
+                    new Vector2(x+Mathf.Cos(angle)*outer,292+Mathf.Sin(angle)*outer),2,spark);
+            }
             for(int sign=-1;sign<=1;sign+=2)
             {
                 float edge=x+sign*184;

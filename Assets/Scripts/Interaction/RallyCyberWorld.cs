@@ -4,48 +4,60 @@ using UnityEngine.SceneManagement;
 
 namespace Naispo.Interaction
 {
-    /// <summary>Visual-only arena scenery. The court continues to own every physical boundary.</summary>
+    /// <summary>
+    /// Render-only violet/bronze dueling hall. The narrow center net mirrors the
+    /// physical collider's exact bottom and top; no scenery geometry is physical.
+    /// </summary>
+    [ExecuteAlways]
     public sealed class RallyCyberWorld : MonoBehaviour
     {
-        const float FloorDepth = 1f;
+        const float NetLineWidth = .024f;
+        const float NetHaloWidth = .072f;
         readonly List<Object> ownedResources = new List<Object>();
+        RallyVisualConfig config;
         GameObject scenery;
         Camera arenaCamera;
-        Transform backdrop;
-        Sprite whiteSprite;
+        Transform backdrop, veil;
+        Sprite backdropSprite, veilSprite, lineSprite;
         SpriteRenderer netLine, netHalo, topCap, floorCap;
-        bool visible = true, netConfigured;
+        bool visible = true, netConfigured, backdropConfigured, destroyed;
         float viewportHeight, viewportAspect, netTopY, netFloorY;
         Vector3 cameraPosition;
 
-        public void Initialize(float halfWidth, float matchFloor, Camera camera)
+        public float NetTop => netTopY;
+        public float NetFloor => netFloorY;
+        public float NetVisualHeight => Mathf.Max(0, netTopY - netFloorY);
+        public bool IsInitialized => scenery != null;
+        public bool UsesConfiguredBackground => backdropConfigured;
+        public int OwnedResourceCount => ownedResources.Count;
+        public Transform Background => backdrop;
+        public Sprite BackgroundSprite => backdropSprite;
+
+        public void Initialize(float halfWidth, float matchFloor, Camera camera, RallyVisualConfig visualConfig = null)
         {
-            if(scenery != null || camera == null || !camera.orthographic) return;
+            if (scenery != null || camera == null || !camera.orthographic) return;
+            config = visualConfig;
             arenaCamera = camera;
-            scenery = CreateChild("Cyber arena scenery", transform);
+            scenery = CreateChild("Dueling hall scenery", transform);
             scenery.transform.position = new Vector3(camera.transform.position.x, 0, 0);
 
-            var sky = CreateSprite(CreateSkyTexture(), "Cyber atmosphere");
-            backdrop = CreateRenderer("Blue black sky", sky, Color.white, -80).transform;
-            UpdateBackdrop();
-            var white = new Texture2D(1, 1, TextureFormat.RGBA32, false) { name = "Cyber line white" };
-            white.SetPixel(0, 0, Color.white); white.Apply(false, true);
-            whiteSprite = CreateSprite(white, "Cyber line");
-            BuildFloor(halfWidth, matchFloor);
+            lineSprite = CreateOwnedTextureSprite(NewSolidTexture(), "Dueling hall line");
+            BuildBackdrop(camera);
+            BuildHall(halfWidth, matchFloor, camera);
             BuildNet();
-            if(!netConfigured) SetNet(matchFloor + 1, matchFloor);
-            else UpdateNet();
+            if (!netConfigured) SetNet(matchFloor + 2, matchFloor - 1);
             scenery.SetActive(visible);
         }
 
         public void SetVisible(bool value)
         {
             visible = value;
-            if(scenery != null) scenery.SetActive(value);
+            if (scenery != null) scenery.SetActive(value);
+            if (value) RefreshLayout();
         }
 
-        // Coordinates are absolute world-space heights. The caller supplies the scoring floor,
-        // which can coincide with the top of the physical net at its lowest setting.
+        // Absolute world-space heights. The caller supplies the physical net collider's
+        // actual bottom and top, including the minimum-height case.
         public void SetNet(float topY, float floorY)
         {
             netConfigured = true;
@@ -54,191 +66,314 @@ namespace Naispo.Interaction
             UpdateNet();
         }
 
-        void Update()
+        public void RefreshLayout()
         {
-            if(!visible || scenery == null || arenaCamera == null) return;
-            if(!Mathf.Approximately(viewportHeight, arenaCamera.orthographicSize) ||
-               !Mathf.Approximately(viewportAspect, arenaCamera.aspect) ||
-               cameraPosition != arenaCamera.transform.position) UpdateBackdrop();
-        }
-
-        void UpdateBackdrop()
-        {
+            if (arenaCamera == null || scenery == null) return;
             viewportHeight = arenaCamera.orthographicSize;
             viewportAspect = arenaCamera.aspect;
             cameraPosition = arenaCamera.transform.position;
-            backdrop.position = new Vector3(cameraPosition.x, cameraPosition.y, 0);
-            backdrop.localScale = new Vector3(viewportHeight * viewportAspect * 2 + .1f,
-                viewportHeight * 2 + .1f, 1);
+            float width = viewportHeight * viewportAspect * 2, height = viewportHeight * 2;
+            Vector3 viewportCenter = new Vector3(cameraPosition.x, cameraPosition.y, 0);
+            if (backdrop != null)
+            {
+                RallySceneryArtwork.FitSpriteToViewport(backdrop, backdropSprite, viewportCenter,
+                    width, height, backdropConfigured);
+            }
+            if (veil != null)
+            {
+                RallySceneryArtwork.FitSpriteToViewport(veil, veilSprite, viewportCenter, width, height, false);
+            }
         }
 
-        void BuildFloor(float halfWidth, float matchFloor)
+        void Update()
         {
-            float edge = Mathf.Max(.5f, halfWidth - .25f);
-            float bottom = matchFloor - FloorDepth;
-            float vanishingY = matchFloor + 2.6f;
-            float nearDistance = vanishingY - bottom;
-            Color gridColor = new Color(.36f, .47f, .61f, .20f);
+            if (!visible || scenery == null || arenaCamera == null) return;
+            if (!Mathf.Approximately(viewportHeight, arenaCamera.orthographicSize) ||
+                !Mathf.Approximately(viewportAspect, arenaCamera.aspect) ||
+                cameraPosition != arenaCamera.transform.position) RefreshLayout();
+        }
 
-            // Clip each ray to this shallow floor band before creating any geometry.
-            // The vanishing point is only a construction aid and never becomes a visible line.
-            for(int i = -6; i <= 6; i++)
+        void BuildBackdrop(Camera camera)
+        {
+            Sprite configured = Normalized(config != null ? config.battleBackground : null, 1f, "Configured dueling hall background");
+            backdropConfigured = configured != null;
+            backdropSprite = configured ?? CreateOwnedTextureSprite(CreateSkyTexture(), "Violet dueling hall background");
+            var background = RallySceneryArtwork.AddRenderer(scenery.transform, "Violet dueling hall background",
+                backdropSprite, Color.white, -90, simple: true);
+            backdrop = background.transform;
+
+            veilSprite = CreateOwnedTextureSprite(CreateVeilTexture(), "Dueling hall center veil");
+            var veilRenderer = RallySceneryArtwork.AddRenderer(scenery.transform, "Dark dueling veil",
+                veilSprite, Color.white, -89, simple: true);
+            veil = veilRenderer.transform;
+            RefreshLayout();
+        }
+
+        void BuildHall(float halfWidth, float matchFloor, Camera camera)
+        {
+            float bottom = camera.transform.position.y - camera.orthographicSize;
+            float top = camera.transform.position.y + camera.orthographicSize * .98f;
+            float height = Mathf.Max(2, top - bottom);
+            Color deep = config != null ? config.battleDeep : new Color(.043f, .027f, .074f);
+            Color violet = config != null ? config.battleViolet : new Color(.53f, .33f, .74f);
+            Color glass = config != null ? config.battleGlass : new Color(.27f, .19f, .43f);
+            Color bronze = config != null ? config.battleBronze : new Color(.63f, .43f, .24f);
+            Color dimBronze = new Color(bronze.r, bronze.g, bronze.b, .34f);
+
+            // Side windows and pointed bronze ribs in the same architectural family.
+            for (int side = -1; side <= 1; side += 2)
             {
-                float nearX = i * edge * .25f;
-                float farX = nearX * (vanishingY - matchFloor) / nearDistance;
-                if(Mathf.Abs(farX) > edge) continue;
-                float endX = Mathf.Clamp(nearX, -edge, edge);
-                float endY = Mathf.Abs(nearX) <= edge ? bottom
-                    : vanishingY - nearDistance * Mathf.Abs(endX / nearX);
-                CreateLine("Floor depth line " + i, new Vector2(farX, matchFloor),
-                    new Vector2(endX, endY), .012f, gridColor, -5);
-            }
-            float[] depths = { .16f, .39f, .70f, 1f };
-            for(int i = 0; i < depths.Length; i++)
-            {
-                float y = matchFloor - depths[i];
-                Color color = gridColor;
-                color.a = Mathf.Lerp(.20f, .10f, depths[i]);
-                CreateLine("Floor cross line " + i, new Vector2(-edge, y), new Vector2(edge, y),
-                    .012f, color, -5);
+                float outer = side * (halfWidth - .42f);
+                float inner = side * halfWidth * .30f;
+                float peak = matchFloor + height * .70f;
+                AddPointedArch("Hall arch " + side, outer, inner, peak, matchFloor - .55f,
+                    new Color(bronze.r, bronze.g, bronze.b, .28f), 11);
+                AddPointedArch("Hall inner arch " + side, outer + side * .10f, inner - side * .10f,
+                    peak - height * .06f, matchFloor - .28f, new Color(violet.r, violet.g, violet.b, .18f), 9);
+                RallySceneryArtwork.AddQuad(scenery.transform, "Hall glass " + side, lineSprite,
+                    new Color(glass.r, glass.g, glass.b, .20f), -72,
+                    new Vector2((outer + inner) * .5f, matchFloor + height * .12f),
+                    new Vector2(Mathf.Abs(inner - outer) * .88f, height * .46f));
+                for (int division = 1; division < 3; division++)
+                {
+                    float x = Mathf.Lerp(outer, inner, division / 3f);
+                    RallySceneryArtwork.AddQuad(scenery.transform, "Hall mullion " + side + " " + division,
+                        lineSprite, new Color(bronze.r, bronze.g, bronze.b, .22f), -60,
+                        new Vector2(x, matchFloor + height * .06f), new Vector2(.014f, height * .30f));
+                }
+                RallySceneryArtwork.AddColumn(scenery.transform, "Hall column " + side, lineSprite,
+                    new Color(glass.r * .60f, glass.g * .60f, glass.b * .60f, .42f), dimBronze, -58,
+                    outer, matchFloor - .70f, top, .13f);
+                RallySceneryArtwork.AddColumn(scenery.transform, "Hall inner column " + side, lineSprite,
+                    new Color(violet.r * .40f, violet.g * .40f, violet.b * .40f, .32f), dimBronze, -58,
+                    inner, matchFloor - .65f, top * .94f, .075f);
+                // Sconces are pure sprites: no Light component and no gameplay illumination.
+                for (int level = 0; level < 2; level++)
+                {
+                    float x = outer + side * .24f;
+                    float y = matchFloor + height * (.20f + level * .25f);
+                    RallySceneryArtwork.AddQuad(scenery.transform, "Sconce stem " + side + " " + level,
+                        lineSprite, new Color(bronze.r, bronze.g, bronze.b, .28f), -54,
+                        new Vector2(x, y - .10f), new Vector2(.016f, .20f));
+                    RallySceneryArtwork.AddQuad(scenery.transform, "Sconce cup " + side + " " + level,
+                        lineSprite, new Color(bronze.r, bronze.g, bronze.b, .38f), -53,
+                        new Vector2(x, y + .02f), new Vector2(.10f, .10f));
+                    RallySceneryArtwork.AddQuad(scenery.transform, "Sconce flame " + side + " " + level,
+                        lineSprite, new Color(violet.r, violet.g, violet.b, .20f), -52,
+                        new Vector2(x, y + .12f), new Vector2(.045f, .13f));
+                }
             }
 
-            for(int side = -1; side <= 1; side += 2)
+            // Quiet polished floor with a single bronze inlay and peripheral rune arcs.
+            float floorDepth = Mathf.Max(.9f, matchFloor - bottom + .25f);
+            RallySceneryArtwork.AddQuad(scenery.transform, "Hall floor", lineSprite,
+                new Color(deep.r * .55f, deep.g * .55f, deep.b * .62f, .58f), -66,
+                new Vector2(0, matchFloor - floorDepth * .5f), new Vector2(halfWidth * 2, floorDepth));
+            RallySceneryArtwork.AddQuad(scenery.transform, "Hall threshold", lineSprite,
+                new Color(bronze.r, bronze.g, bronze.b, .26f), -55, new Vector2(0, matchFloor + .006f),
+                new Vector2(halfWidth * 1.86f, .020f));
+            AddFloorRune(halfWidth, matchFloor, bronze);
+        }
+
+        void AddFloorRune(float halfWidth, float matchFloor, Color bronze)
+        {
+            float radiusX = Mathf.Min(halfWidth * .28f, 2.4f), radiusY = .36f;
+            Vector2 center = new Vector2(0, matchFloor - .48f);
+            Vector2 previous = center + new Vector2(radiusX, 0);
+            for (int i = 1; i <= 18; i++)
             {
-                Color color = side < 0 ? new Color(.50f, .91f, .96f, .48f)
-                    : new Color(1, .70f, .55f, .48f);
-                float x = side * edge;
-                CreateLine("Arena corner upright " + side, new Vector2(x, matchFloor + .23f),
-                    new Vector2(x, matchFloor), .018f, color, -5);
-                CreateLine("Arena corner foot " + side, new Vector2(x, matchFloor),
-                    new Vector2(x - side * .24f, matchFloor), .018f, color, -5);
+                float angle = i * Mathf.PI * 2 / 18;
+                Vector2 point = center + new Vector2(Mathf.Cos(angle) * radiusX, Mathf.Sin(angle) * radiusY);
+                RallySceneryArtwork.AddStroke(scenery.transform, "Floor rune " + i, lineSprite,
+                    new Color(bronze.r, bronze.g, bronze.b, .11f), -54, previous, point, .014f);
+                previous = point;
+            }
+        }
+
+        void AddPointedArch(string prefix, float left, float right, float peakY, float baseY, Color color, int segments)
+        {
+            float peakX = (left + right) * .5f;
+            Vector2 previousLeft = new Vector2(left, baseY), previousRight = new Vector2(right, baseY);
+            for (int i = 1; i <= segments; i++)
+            {
+                float t = i / (float)segments;
+                float xLeft = Mathf.Lerp(left, peakX, t);
+                float yLeft = Mathf.Lerp(baseY, peakY, Mathf.Pow(t, .72f));
+                float xRight = Mathf.Lerp(right, peakX, t);
+                float yRight = Mathf.Lerp(baseY, peakY, Mathf.Pow(t, .72f));
+                RallySceneryArtwork.AddStroke(scenery.transform, prefix + " L" + i, lineSprite, color, -59,
+                    previousLeft, new Vector2(xLeft, yLeft), .026f);
+                RallySceneryArtwork.AddStroke(scenery.transform, prefix + " R" + i, lineSprite, color, -59,
+                    previousRight, new Vector2(xRight, yRight), .026f);
+                previousLeft = new Vector2(xLeft, yLeft);
+                previousRight = new Vector2(xRight, yRight);
             }
         }
 
         void BuildNet()
         {
-            netLine = CreateRenderer("Fine center net", CreateSprite(CreateNetTexture(false), "Cyber net gradient"),
-                Color.white, 3);
-            netHalo = CreateRenderer("Center net soft edge", CreateSprite(CreateNetTexture(true), "Cyber net glow"),
-                Color.white, 3);
-            topCap = CreateRenderer("Center net top cap", whiteSprite, new Color(.66f, .78f, .91f, .76f), 3);
-            floorCap = CreateRenderer("Center net floor cap", whiteSprite, new Color(.66f, .78f, .91f, .48f), 3);
+            netLine = RallySceneryArtwork.AddRenderer(scenery.transform, "Fine center net",
+                CreateOwnedTextureSprite(CreateNetTexture(false), "Dueling net gradient"), Color.white, 3);
+            netHalo = RallySceneryArtwork.AddRenderer(scenery.transform, "Center net soft edge",
+                CreateOwnedTextureSprite(CreateNetTexture(true), "Dueling net glow"), Color.white, 3);
+            topCap = RallySceneryArtwork.AddRenderer(scenery.transform, "Center net top cap", lineSprite,
+                new Color(.78f, .61f, .38f, .78f), 3);
+            floorCap = RallySceneryArtwork.AddRenderer(scenery.transform, "Center net floor cap", lineSprite,
+                new Color(.68f, .50f, .32f, .55f), 3);
         }
 
         void UpdateNet()
         {
-            if(netLine == null) return;
+            if (netLine == null) return;
             float height = Mathf.Max(0, netTopY - netFloorY);
             bool hasHeight = height > .001f;
             netLine.enabled = netHalo.enabled = hasHeight;
-            netLine.transform.localPosition = netHalo.transform.localPosition = new Vector3(0, netFloorY + height * .5f, 0);
-            netLine.transform.localScale = new Vector3(.025f, height, 1);
-            netHalo.transform.localScale = new Vector3(.13f, height, 1);
-            topCap.enabled = height > .025f;
+            netLine.transform.localPosition = netHalo.transform.localPosition =
+                new Vector3(0, netFloorY + height * .5f, 0);
+            netLine.transform.localScale = new Vector3(NetLineWidth, height, 1);
+            netHalo.transform.localScale = new Vector3(NetHaloWidth, height, 1);
+            topCap.enabled = hasHeight;
             topCap.transform.localPosition = new Vector3(0, netTopY, 0);
-            topCap.transform.localScale = new Vector3(.16f, .018f, 1);
+            topCap.transform.localScale = new Vector3(.14f, .018f, 1);
+            floorCap.enabled = hasHeight;
             floorCap.transform.localPosition = new Vector3(0, netFloorY, 0);
-            floorCap.transform.localScale = new Vector3(.16f, .018f, 1);
-        }
-
-        void CreateLine(string objectName, Vector2 from, Vector2 to, float width, Color color, int order)
-        {
-            Vector2 delta = to - from;
-            var renderer = CreateRenderer(objectName, whiteSprite, color, order);
-            renderer.transform.localPosition = (from + to) * .5f;
-            renderer.transform.localRotation = Quaternion.Euler(0, 0, Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg);
-            renderer.transform.localScale = new Vector3(delta.magnitude, width, 1);
+            floorCap.transform.localScale = new Vector3(.14f, .018f, 1);
         }
 
         Texture2D CreateSkyTexture()
         {
-            const int width = 256, height = 144;
-            var texture = NewTexture(width, height, "Cyber blue atmosphere");
+            const int width = 512, height = 288;
+            var texture = RallySceneryArtwork.NewTexture(width, height, "Violet dueling hall atmosphere");
             var pixels = new Color32[width * height];
-            Color dark = new Color(.024f, .043f, .078f);
-            Color light = new Color(.071f, .105f, .164f);
-            for(int y = 0; y < height; y++)
-            for(int x = 0; x < width; x++)
+            Color deep = config != null ? config.battleDeep : new Color(.043f, .027f, .074f);
+            Color violet = config != null ? config.battleViolet : new Color(.53f, .33f, .74f);
+            Color bronze = config != null ? config.battleBronze : new Color(.63f, .43f, .24f);
+            for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
             {
-                float nx = ((x + .5f) / width - .5f) * 1.75f;
-                float ny = ((y + .5f) / height - .73f) * 1.2f;
-                float amount = Mathf.Exp(-(nx * nx + ny * ny) * 3.6f);
-                pixels[y * width + x] = Color.Lerp(dark, light, amount * .66f);
+                float nx = (x + .5f) / width * 2 - 1;
+                float ny = (y + .5f) / height;
+                Color color = Color.Lerp(deep * .50f, deep * 1.50f, Mathf.SmoothStep(0, 1, ny));
+                float side = Mathf.Pow(Mathf.Abs(nx), 2.8f);
+                color += new Color(violet.r, violet.g, violet.b, 0) * (side * .23f * (.58f + .42f * ny));
+                color += new Color(bronze.r, bronze.g, bronze.b, 0) * (Mathf.Pow(Mathf.Abs(nx), 7f) * .11f);
+                float center = 1 - Mathf.SmoothStep(0, 1, Mathf.InverseLerp(0, .48f, Mathf.Abs(nx)));
+                color *= 1 - center * .38f;
+                color.a = 1;
+                pixels[y * width + x] = color;
             }
-            texture.SetPixels32(pixels); texture.Apply(false, true);
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+            return texture;
+        }
+
+        Texture2D CreateVeilTexture()
+        {
+            const int width = 160, height = 90;
+            var texture = RallySceneryArtwork.NewTexture(width, height, "Dueling hall center veil");
+            var pixels = new Color32[width * height];
+            Color dark = config != null ? config.battleDeep : new Color(.043f, .027f, .074f);
+            for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+            {
+                float nx = Mathf.Abs((x + .5f) / width * 2 - 1);
+                float ny = Mathf.Abs((y + .5f) / height * 2 - 1);
+                float center = 1 - Mathf.SmoothStep(0, 1, Mathf.InverseLerp(.18f, .92f, Mathf.Max(nx * .82f, ny)));
+                pixels[y * width + x] = new Color(dark.r, dark.g, dark.b, center * .50f);
+            }
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
             return texture;
         }
 
         Texture2D CreateNetTexture(bool soft)
         {
-            int width = soft ? 32 : 1;
+            int width = soft ? 24 : 1;
             const int height = 64;
-            var texture = NewTexture(width, height, soft ? "Cyber net bloom" : "Cyber net light");
+            var texture = RallySceneryArtwork.NewTexture(width, height, soft ? "Dueling net bloom" : "Dueling net light");
             var pixels = new Color32[width * height];
-            for(int y = 0; y < height; y++)
-            for(int x = 0; x < width; x++)
+            Color bronze = config != null ? config.battleBronze : new Color(.63f, .43f, .24f);
+            Color violet = config != null ? config.battleViolet : new Color(.53f, .33f, .74f);
+            for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
             {
                 float t = y / (float)(height - 1);
-                Color color = Color.Lerp(new Color(.49f, .61f, .73f, .18f),
-                    new Color(.78f, .85f, .93f, .90f), t);
-                if(soft)
+                Color color = Color.Lerp(new Color(bronze.r, bronze.g, bronze.b, .20f),
+                    new Color(violet.r, violet.g, violet.b, .92f), t);
+                if (soft)
                 {
                     float horizontal = Mathf.Abs((x + .5f) / width * 2 - 1);
-                    color.a *= Mathf.Pow(1 - horizontal, 2) * .10f;
+                    color.a *= Mathf.Pow(1 - horizontal, 2) * .09f;
                 }
                 pixels[y * width + x] = color;
             }
-            texture.SetPixels32(pixels); texture.Apply(false, true);
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
             return texture;
         }
 
-        static Texture2D NewTexture(int width, int height, string textureName)
+        Texture2D NewSolidTexture()
         {
-            return new Texture2D(width, height, TextureFormat.RGBA32, false)
-            {
-                name = textureName, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear
-            };
+            var texture = RallySceneryArtwork.NewTexture(1, 1, "Dueling hall solid");
+            texture.SetPixel(0, 0, Color.white);
+            texture.Apply(false, true);
+            return texture;
         }
 
-        Sprite CreateSprite(Texture2D texture, string spriteName)
+        Sprite CreateOwnedTextureSprite(Texture2D texture, string spriteName)
         {
-            ownedResources.Add(texture);
-            var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height),
-                Vector2.one * .5f, texture.width, 0, SpriteMeshType.FullRect);
-            sprite.name = spriteName;
-            ownedResources.Add(sprite);
+            Own(texture);
+            var sprite = RallySceneryArtwork.CreateSprite(texture, spriteName);
+            Own(sprite);
             return sprite;
         }
 
-        SpriteRenderer CreateRenderer(string objectName, Sprite sprite, Color color, int order)
+        Sprite Normalized(Sprite source, float size, string wrapperName)
         {
-            var child = CreateChild(objectName, scenery.transform);
-            var renderer = child.AddComponent<SpriteRenderer>();
-            renderer.sprite = sprite; renderer.color = color; renderer.sortingOrder = order;
-            renderer.drawMode = SpriteDrawMode.Sliced;
-            renderer.size = Vector2.one;
-            return renderer;
+            if (source == null) return null;
+            var wrapper = RallySceneryArtwork.CreateNormalizedSprite(source, size, wrapperName);
+            if (wrapper != null) Own(wrapper);
+            return wrapper;
         }
 
-        GameObject CreateChild(string childName, Transform parent)
+        GameObject CreateChild(string name, Transform parent)
         {
-            var child = new GameObject(childName);
+            var child = new GameObject(name);
             SceneManager.MoveGameObjectToScene(child, gameObject.scene);
             child.transform.SetParent(parent, false);
             return child;
         }
 
+        T Own<T>(T resource) where T : Object
+        {
+            if (resource != null) ownedResources.Add(resource);
+            return resource;
+        }
+
+        void OnEnable()
+        {
+            if (scenery != null) scenery.SetActive(visible);
+        }
+
+        void OnDisable()
+        {
+            if (scenery != null) scenery.SetActive(false);
+        }
+
         void OnDestroy()
         {
+            if (destroyed) return;
+            destroyed = true;
             Release(scenery);
-            for(int i = ownedResources.Count - 1; i >= 0; i--) Release(ownedResources[i]);
+            scenery = null;
+            for (int i = ownedResources.Count - 1; i >= 0; i--) Release(ownedResources[i]);
             ownedResources.Clear();
         }
 
         static void Release(Object resource)
         {
-            if(resource == null) return;
-            if(Application.isPlaying) Destroy(resource); else DestroyImmediate(resource);
+            if (resource == null) return;
+            if (Application.isPlaying) Destroy(resource); else DestroyImmediate(resource);
         }
     }
 }

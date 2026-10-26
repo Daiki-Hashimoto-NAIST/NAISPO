@@ -325,8 +325,8 @@ namespace Naispo.Interaction
             return Mathf.Lerp(minimum, maximum, (noise & 0xFFFFFF) / 16777215f);
         }
 
-        static Color SideColor(int side) => side < 0 ? new Color(.502f, .910f, .957f)
-            : new Color(1, .698f, .549f);
+        static Color SideColor(int side) => side < 0 ? new Color(.64f, .94f, .80f)
+            : new Color(.94f, .76f, .49f);
         static bool Finite(Vector2 value) => !float.IsNaN(value.x) && !float.IsNaN(value.y)
             && !float.IsInfinity(value.x) && !float.IsInfinity(value.y);
 

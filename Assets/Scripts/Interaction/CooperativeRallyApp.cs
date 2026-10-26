@@ -15,6 +15,7 @@ namespace Naispo.Interaction
         public Material silhouetteMaterial;
         public Sprite ballSprite;
         public Font japaneseFont;
+        public RallyVisualConfig visualConfig;
         public CooperativeCoinGame Game {get;private set;}
         public KinectSilhouetteManager[] Players {get;private set;} = new KinectSilhouetteManager[2];
         public MultiKinectManager Sensors {get;private set;}
@@ -36,8 +37,8 @@ namespace Naispo.Interaction
         bool paletteInitialized,versusPalette;
         bool stylePaletteInitialized,versusStylePalette;
         Color cameraOverlayColor,cameraPanelColor;
-        static readonly Color GardenBackground=new Color(.025f,.075f,.055f);
-        static readonly Color VersusBackground=new Color(.031f,.059f,.110f);
+        static readonly Color GardenBackground=new Color(.012f,.043f,.055f);
+        static readonly Color VersusBackground=new Color(.043f,.027f,.074f);
 
         void Awake()
         {
@@ -46,6 +47,7 @@ namespace Naispo.Interaction
             if(gameCamera==null)gameCamera=Camera.main;
             gameCamera.orthographic=true;gameCamera.orthographicSize=5;
             FitCamera();
+            if(visualConfig==null)visualConfig=RallyVisualConfig.LoadDefault();
             gameCamera.backgroundColor=GardenBackground;
             sensorSettings=Instantiate(sensorTemplate);
             sensorSettings.showStatus=false;
@@ -70,7 +72,10 @@ namespace Naispo.Interaction
             Sensors.enabled=false;sensorsObject.SetActive(true);
             Game=gameObject.AddComponent<CooperativeCoinGame>();
             Game.BallLightRadius=template.ballLightRadius;
-            Game.Configure(ball,gameCamera,japaneseFont);
+            // The visual configuration must exist before the first court build so the
+            // initial art already uses the user's optional replacements.
+            Game.VisualConfig=visualConfig;
+            Game.Configure(ball,gameCamera,japaneseFont,visualConfig);
         }
 
         void BuildPlayer(int slot)
@@ -140,15 +145,16 @@ namespace Naispo.Interaction
             for(int i=0;i<2;i++)
             {
                 demos[i].acceptControls=Application.isFocused&&!SensorSettingsOpen&&!Game.SettingsOpen&&!Game.IsPaused;
-                handWalls[i].Softened=Game.IsVersus&&Game.VersusState.SoftenedSide==(i==0 ? -1 : 1);
             }
             gameCamera.backgroundColor=Game.IsVersus ? VersusBackground : GardenBackground;
         }
 
-        static Color PlayerColor(int slot,bool versus)
+        Color PlayerColor(int slot,bool versus)
         {
-            if(versus)return slot==0 ? new Color(.502f,.910f,.957f) : new Color(1,.698f,.549f);
-            return slot==0 ? new Color(.64f,.94f,.80f) : new Color(.94f,.76f,.49f);
+            var config=visualConfig;
+            return slot==0
+                ? (config!=null?config.playerJade:new Color(.64f,.94f,.80f))
+                : (config!=null?config.playerGold:new Color(.94f,.76f,.49f));
         }
 
         void ApplyPlayerPalette()
@@ -429,18 +435,18 @@ namespace Naispo.Interaction
             bool versus=Game!=null&&Game.IsVersus;
             if(stylePaletteInitialized&&versusStylePalette==versus)return;
             stylePaletteInitialized=true;versusStylePalette=versus;
-            Color ink=versus ? new Color(.929f,.961f,.984f) : new Color(.94f,.95f,.86f);
-            Color dim=versus ? new Color(.565f,.627f,.722f) : new Color(.59f,.69f,.62f);
-            Color selectedInk=versus ? new Color(.075f,.13f,.21f) : new Color(.07f,.16f,.11f);
-            cameraOverlayColor=versus ? new Color(.020f,.039f,.078f,.94f) : new Color(.014f,.037f,.026f,.94f);
-            cameraPanelColor=versus ? new Color(.078f,.125f,.20f) : new Color(.055f,.125f,.087f);
+            Color ink=versus ? new Color(.929f,.901f,.984f) : new Color(.94f,.95f,.86f);
+            Color dim=versus ? new Color(.627f,.576f,.702f) : new Color(.59f,.69f,.62f);
+            Color selectedInk=versus ? new Color(.10f,.075f,.16f) : new Color(.07f,.16f,.11f);
+            cameraOverlayColor=versus ? new Color(.024f,.017f,.048f,.84f) : new Color(.014f,.037f,.030f,.84f);
+            cameraPanelColor=versus ? new Color(.086f,.062f,.13f) : new Color(.035f,.095f,.085f);
             // Recolor the existing one-pixel surfaces only when the mode changes.
-            SetTextureColor(idleTexture,versus ? new Color(.078f,.125f,.20f) : new Color(.07f,.16f,.11f));
-            SetTextureColor(hoverTexture,versus ? new Color(.12f,.21f,.31f) : new Color(.13f,.25f,.18f));
-            SetTextureColor(pressedTexture,versus ? new Color(.18f,.30f,.42f) : new Color(.20f,.34f,.24f));
-            SetTextureColor(selectedTexture,versus ? new Color(.75f,.90f,.94f) : new Color(.79f,.88f,.74f));
-            SetTextureColor(fieldTexture,versus ? new Color(.047f,.086f,.149f) : new Color(.025f,.075f,.05f));
-            SetTextureColor(trackTexture,versus ? new Color(.19f,.27f,.38f) : new Color(.16f,.25f,.19f));
+            SetTextureColor(idleTexture,versus ? new Color(.086f,.062f,.13f) : new Color(.045f,.12f,.11f));
+            SetTextureColor(hoverTexture,versus ? new Color(.14f,.10f,.21f) : new Color(.08f,.20f,.18f));
+            SetTextureColor(pressedTexture,versus ? new Color(.21f,.15f,.30f) : new Color(.13f,.30f,.26f));
+            SetTextureColor(selectedTexture,versus ? new Color(.76f,.68f,.90f) : new Color(.79f,.88f,.74f));
+            SetTextureColor(fieldTexture,versus ? new Color(.052f,.038f,.088f) : new Color(.018f,.060f,.060f));
+            SetTextureColor(trackTexture,versus ? new Color(.17f,.13f,.25f) : new Color(.12f,.25f,.22f));
             SetTextColor(label,ink);SetTextColor(title,ink);
             SetTextColor(small,dim);SetTextColor(statusLabel,dim);
             SetTextColor(button,ink);SetTextColor(field,ink);

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -40,6 +41,9 @@ namespace Naispo.Interaction
     }
 
     /// <summary>Two players return one ball over a low net and collect a shared arc of coins.</summary>
+    // ExecuteAlways keeps lifecycle cleanup (OnDestroy) reliable when the component is
+    // destroyed or reloaded in edit mode; all frame callbacks stay play-mode only.
+    [ExecuteAlways]
     public sealed partial class CooperativeCoinGame : MonoBehaviour
     {
         public const int CoinsPerRound = 9;
@@ -63,17 +67,26 @@ namespace Naispo.Interaction
         Transform netCap;
         SpriteRenderer ballLight, ballCorona;
         Sprite coinSprite, whiteSprite, haloSprite, lightSprite, ballCoreSprite, originalBallSprite;
+        Sprite configuredStarSprite, configuredBallSprite;
+        readonly List<Sprite> ownedVisualWrappers = new List<Sprite>();
+        RallyVisualConfig visualConfig;
         Texture2D coinTexture, whiteTexture, haloTexture, lightTexture, ballCoreTexture;
         PhysicsMaterial2D wallMaterial;
         GUIStyle titleStyle, bodyStyle, scoreStyle, goalStyle, buttonStyle, centeredStyle, smallStyle;
         GUIStyle leftScoreStyle, rightScoreStyle, matchHintStyle, pointStyle, effectStyle, winStyle, collectionCountStyle;
         Texture2D panelTexture;
         Vector2 center, previous;
-        float halfWidth, halfHeight, serveRemaining=-1, serveDuration, clearRemaining=-1, animationTime;
+        float halfWidth, halfHeight, serveRemaining=-1, serveDuration, clearRemaining=-1, animationTime, presentationDelta;
         int servingSide=-1;
         int lastPointWinner;
         bool configured, paused, inputReady=true, settingsOpen;
 
+        /// <summary>Optional presentation assets. Supplied before Configure or via Configure.</summary>
+        public RallyVisualConfig VisualConfig { get => visualConfig; set => visualConfig = value; }
+        public bool UsesConfiguredBallSprite => configuredBallSprite != null;
+        public bool UsesConfiguredStarSprite => configuredStarSprite != null;
+        public Sprite BallArtworkSprite => ballView != null ? ballView.sprite : null;
+        public Sprite StarArtworkSprite => coinSprite;
         public int TeamScore => progress.TeamScore;
         public int Round => progress.Round;
         public int CollectedCount => progress.CollectedCount;
@@ -120,9 +133,12 @@ namespace Naispo.Interaction
             set { ballSpeed=Mathf.Clamp(value,6.5f,10.5f); if(ball != null) ball.maximumSpeed=ballSpeed*MaximumBallSpeedFactor; }
         }
 
-        public void Configure(AirHockeyBall gameBall, Camera view, Font japaneseFont = null)
+        public void Configure(AirHockeyBall gameBall, Camera view, Font japaneseFont = null,
+            RallyVisualConfig presentationConfig = null)
         {
             if(configured) return;
+            if(presentationConfig != null) visualConfig=presentationConfig;
+            if(visualConfig == null) visualConfig=RallyVisualConfig.LoadDefault();
             ball=gameBall; cameraView=view; GuiFont=japaneseFont != null ? japaneseFont : GuiFont;
             if(ball == null || cameraView == null || !cameraView.orthographic) return;
             center=cameraView.transform.position;
@@ -163,13 +179,23 @@ namespace Naispo.Interaction
                 lightTexture.SetPixel(x,y,new Color(1,1,1,radiance));
             }
             lightTexture.Apply();
-            coinSprite=Sprite.Create(coinTexture,new Rect(0,0,coinTexture.width,coinTexture.height),Vector2.one*.5f,coinTexture.width/.38f);
+            configuredStarSprite=CreateConfiguredSprite(visualConfig!=null?visualConfig.star:null,.38f,"Configured star");
+            coinSprite=configuredStarSprite!=null ? configuredStarSprite :
+                Sprite.Create(coinTexture,new Rect(0,0,coinTexture.width,coinTexture.height),Vector2.one*.5f,coinTexture.width/.38f);
             haloSprite=Sprite.Create(haloTexture,new Rect(0,0,64,64),Vector2.one*.5f,64);
             lightSprite=Sprite.Create(lightTexture,new Rect(0,0,128,128),Vector2.one*.5f,128);
         }
 
         void BuildBallCoreArtwork()
         {
+            configuredBallSprite=CreateConfiguredSprite(visualConfig!=null?visualConfig.ball:null,.44f,
+                "Configured rally ball");
+            if(configuredBallSprite!=null)
+            {
+                ballCoreSprite=configuredBallSprite;
+                originalBallSprite=ballView.sprite;ballView.sprite=ballCoreSprite;
+                return;
+            }
             const int size=96;
             ballCoreTexture=new Texture2D(size,size,TextureFormat.RGBA32,false) {
                 name="Rally pearl core",wrapMode=TextureWrapMode.Clamp,filterMode=FilterMode.Bilinear
@@ -185,6 +211,13 @@ namespace Naispo.Interaction
             // The visible rim keeps the existing .22 world-unit collision radius.
             ballCoreSprite=Sprite.Create(ballCoreTexture,new Rect(0,0,size,size),Vector2.one*.5f,size/(.44f/.92f));
             originalBallSprite=ballView.sprite;ballView.sprite=ballCoreSprite;
+        }
+
+        Sprite CreateConfiguredSprite(Sprite source,float maxWorldSize,string wrapperName,bool track=false)
+        {
+            var wrapper=RallySceneryArtwork.CreateNormalizedSprite(source,maxWorldSize,wrapperName);
+            if(wrapper!=null&&track)ownedVisualWrappers.Add(wrapper);
+            return wrapper;
         }
 
         SpriteRenderer Rectangle(string name, Vector2 position, Vector2 size, Color color, int order)
@@ -250,7 +283,7 @@ namespace Naispo.Interaction
             net.transform.position=new Vector3(center.x,ArenaFloor+netHeight*.5f,0);
             net.transform.localScale=new Vector3(.18f,netHeight,1);
             netCap.position=new Vector3(center.x,ArenaFloor+netHeight,0);
-            if(cyber!=null)cyber.SetNet(ArenaFloor+netHeight,MatchFloor);
+            if(cyber!=null)cyber.SetNet(ArenaFloor+netHeight,ArenaFloor);
         }
 
         void BuildCoins()
@@ -289,6 +322,7 @@ namespace Naispo.Interaction
         void PlaceCoins()
         {
             ResetStarHint();
+            if(garden!=null)garden.ResetRoundPresentation();
             for(int i=0;i<CoinsPerRound;i++)
             {
                 coinPositions[i]=ParabolicCoinPosition((float)i/(CoinsPerRound-1),Round,center,halfWidth,halfHeight);
@@ -329,14 +363,24 @@ namespace Naispo.Interaction
         {
             if(!configured) return;
             progress.Reset(); versus.Reset(); lastPointWinner=0; clearRemaining=-1; paused=false;
+            ResetPickupsForMatch(); ClearLightPhase();
             ResetBattlePresentation();
             PlaceCoins(); BeginServe(1.2f);
         }
 
         void Update()
         {
+            if(!Application.isPlaying) return;
             if(!configured) return;
+            // Detect a resume before stepping any timer so a hidden phase replays
+            // its visible warning instead of spending hidden time on the first frame.
+            SyncSpellSuspension();
             AdvanceBattlePresentation(Time.deltaTime);
+            // The garden and old pickup animation share one suspension-aware clock.
+            // It still ticks through serve/clear waits, but never through a blocker.
+            bool presentationRunning=inputReady&&!paused&&!settingsOpen&&!ExternalOverlayOpen&&isActiveAndEnabled&&!IsVersus;
+            presentationDelta=presentationRunning ? Time.deltaTime : 0f;
+            if(garden!=null)garden.StepPresentation(presentationDelta,progress.Complete);
             if(!inputReady || paused || settingsOpen || ExternalOverlayOpen || (IsVersus && versus.Complete)) return;
             if(clearRemaining>=0)
             {
@@ -359,6 +403,7 @@ namespace Naispo.Interaction
                 }
                 return;
             }
+            AdvanceSpellTimers(Time.deltaTime);
             Vector2 current=ball.Body.position;
             if(IsVersus)
             {
@@ -380,6 +425,8 @@ namespace Naispo.Interaction
                 {
                     pickupAges[i]=0;
                     ResetStarHint();
+                    // Collect() is the single authority: one notification per real pickup.
+                    if(garden!=null)garden.NotifyStarCollected(i,coinPositions[i]);
                 }
             }
             AdvanceStarHint(Time.deltaTime);
@@ -392,13 +439,14 @@ namespace Naispo.Interaction
 
         void LateUpdate()
         {
+            if(!Application.isPlaying) return;
             if(!configured) return;
-            animationTime+=Time.unscaledDeltaTime;
+            animationTime+=presentationDelta;
             for(int i=0;i<CoinsPerRound;i++)
             {
                 if(pickupAges[i]>=0)
                 {
-                    pickupAges[i]+=Time.unscaledDeltaTime;
+                    pickupAges[i]+=presentationDelta;
                     float fade=Mathf.Clamp01(1-pickupAges[i]/.35f);
                     coins[i].transform.localScale=Vector3.one*(1+(1-fade)*.8f);
                 }
@@ -408,8 +456,9 @@ namespace Naispo.Interaction
                     coins[i].transform.localScale=Vector3.one*pulse;
                 }
             }
-            RefreshLighting();
+            SyncSpellSuspension();
             RefreshVersusArtwork();
+            RefreshLighting();
         }
 
         // A short fade inside the same radius makes the illuminated edge legible.
@@ -428,13 +477,16 @@ namespace Naispo.Interaction
 
         void RefreshLighting()
         {
-            ballLight.color=new Color(1,.94f,.74f,.014f);
-            ballCorona.color=IsVersus ? new Color(.73f,.88f,1,.30f) : new Color(1,.96f,.85f,.38f);
+            CheckLightSafetyForRendering();
+            bool ballVisible=BallPresentationVisible;
+            Color gold=visualConfig!=null?visualConfig.ballGold:new Color(.95f,.79f,.46f);
+            ballLight.color=new Color(gold.r,gold.g,gold.b,.014f);
+            ballCorona.color=new Color(gold.r,gold.g,gold.b,IsVersus?.30f:.38f);
             ballLight.transform.position=ball.transform.position;
             ballLight.transform.localScale=Vector3.one*(ballLightRadius*2);
             ballCorona.transform.position=ball.transform.position;
-            ballLight.enabled=ballLightEnabled && ballView.enabled && !IsVersus;
-            ballCorona.enabled=ballLightEnabled && ballView.enabled;
+            ballLight.enabled=ballLightEnabled && ballVisible && !IsVersus;
+            ballCorona.enabled=ballLightEnabled && ballVisible;
             for(int i=0;i<CoinsPerRound;i++)
             {
                 float fade=pickupAges[i]>=0 ? Mathf.Clamp01(1-pickupAges[i]/.35f) : 1;
@@ -444,7 +496,14 @@ namespace Naispo.Interaction
                 glows[i].color=new Color(1,.91f,.67f,alpha*(pickupAges[i]>=0 ? .26f : .14f));
             }
             float coreAlpha=serveRemaining>=0 ? .75f+.25f*Mathf.Pow(Mathf.Sin(animationTime*5),2) : 1;
-            ballView.color=IsVersus ? new Color(.90f,.97f,1,coreAlpha) : new Color(1,.995f,.96f,coreAlpha);
+            Color ivory=visualConfig!=null?visualConfig.ballIvory:new Color(1,.995f,.96f);
+            ivory.a=coreAlpha;
+            ballView.color=ivory;
+            // Presentation only: the ball, its light, and attached spell artwork vanish
+            // together while Light is hidden. Physics never changes.
+            ballView.enabled=ballVisible;
+            if(ballSpellRoot!=null) ballSpellRoot.SetActive(ballVisible && IsVersus && ActiveSpell!=RallySpell.None);
+            if(lightPhase==RallyLightPhase.Warning && ballVisible && ballView.enabled) lightWarningPresented=true;
             RefreshStarHint();
         }
 
@@ -459,12 +518,10 @@ namespace Naispo.Interaction
         {
             return CooperativeReflection(velocity,normal,softness,position.x-center.x,ballSpeed,handBoost);
         }
-        internal float RegisterBarrierReturn(int playerSide) =>
-            IsVersus && CanAdvanceBall ? versus.RegisterReturn(playerSide) : 1;
         public Vector2 PlayerBarrierBounce(Vector2 velocity,Vector2 normal,float softness,Vector2 position,int playerSide)
         {
-            float strength=RegisterBarrierReturn(playerSide);
-            return BarrierBounce(velocity,normal,softness,position)*strength;
+            RegisterBarrierHit(playerSide);
+            return BarrierBounce(velocity,normal,softness,position);
         }
 
         internal bool TryScoreFloorBeforeBarrier(Vector2 contactPosition)
@@ -483,6 +540,7 @@ namespace Naispo.Interaction
             float crossingX=Mathf.Lerp(from.x,to.x,t)-center.x;
             int losingSide=Mathf.Abs(crossingX)<.001f ? servingSide : crossingX<0 ? -1 : 1;
             if(!versus.AwardPoint(losingSide)) return false;
+            ClearLightPhase();
             lastPointWinner=-losingSide;
             CelebratePoint(new Vector2(center.x+crossingX,MatchFloor));
             if(versus.Complete)
@@ -530,8 +588,9 @@ namespace Naispo.Interaction
             panelTexture=new Texture2D(1,1); panelTexture.SetPixel(0,0,new Color(.055f,.076f,.14f,.97f)); panelTexture.Apply();
             BuildControlStyles();
         }
-        Color PlayerColor(int side) => IsVersus ? (side<0 ? new Color(.502f,.910f,.957f) : new Color(1,.698f,.549f))
-            : (side<0 ? new Color(.64f,.94f,.80f) : new Color(.94f,.76f,.49f));
+        Color PlayerColor(int side) => side<0
+            ? (visualConfig!=null?visualConfig.playerJade:new Color(.64f,.94f,.80f))
+            : (visualConfig!=null?visualConfig.playerGold:new Color(.94f,.76f,.49f));
 
         void DrawCollectionHud()
         {
@@ -581,11 +640,8 @@ namespace Naispo.Interaction
                 float size=scored && i==score-1 ? 6+pop*5 : 6;
                 Fill(new Rect(x+35+i*14-size*.5f,129-size*.5f,size,size),pip);
             }
-            if(versus.SoftenedSide==side)
-            {
-                DrawSoftReturnGlyph(new Vector2(x+24,163),9,new Color(.79f,.64f,1));
-                GUI.Label(new Rect(x+38,149,52,28),"−25%",effectStyle);
-            }
+            if(ActiveSpell!=RallySpell.None && SpellOwner==side)
+                DrawSpellIcon(new Vector2(x+84,170),ActiveSpell);
         }
 
         static void Stroke(Vector2 from,Vector2 to,float thickness,Color color)
@@ -597,17 +653,36 @@ namespace Naispo.Interaction
             GUI.matrix=old;
         }
 
-        static void DrawSoftReturnGlyph(Vector2 center,float radius,Color color)
+        static void DrawSpellIcon(Vector2 center,RallySpell spell)
         {
-            Vector2 top=center+Vector2.down*radius, right=center+Vector2.right*radius;
-            Vector2 bottom=center+Vector2.up*radius, left=center+Vector2.left*radius;
-            Stroke(top,right,1.5f,color); Stroke(right,bottom,1.5f,color);
-            Stroke(bottom,left,1.5f,color); Stroke(left,top,1.5f,color);
-            for(int i=0;i<2;i++)
+            Color color=SpellColor(spell);
+            if(spell==RallySpell.Fireball)
             {
-                Vector2 middle=center+Vector2.up*(i*4-2);
-                Stroke(middle+new Vector2(-4,-2),middle+Vector2.up,1.5f,color);
-                Stroke(middle+Vector2.up,middle+new Vector2(4,-2),1.5f,color);
+                Stroke(center+new Vector2(-7,6),center+new Vector2(1,-7),2,color);
+                Stroke(center+new Vector2(7,6),center+new Vector2(-1,-7),2,color);
+                Stroke(center+new Vector2(-5,-6),center+new Vector2(5,-6),1.6f,color);
+            }
+            else if(spell==RallySpell.Timer)
+            {
+                const int segments=10;
+                Vector2 previous=center+new Vector2(0,7);
+                for(int i=1;i<=segments;i++)
+                {
+                    float angle=i*Mathf.PI*2/segments;
+                    Vector2 point=center+new Vector2(Mathf.Sin(angle),Mathf.Cos(angle))*7;
+                    Stroke(previous,point,1.4f,color);
+                    previous=point;
+                }
+                Stroke(center,center+new Vector2(0,4),1.4f,color);
+                Stroke(center,center+new Vector2(3,0),1.4f,color);
+            }
+            else
+            {
+                Stroke(center+new Vector2(0,8),center+new Vector2(0,4),1.4f,color);
+                Stroke(center+new Vector2(-5,4),center+new Vector2(-6,-5),1.4f,color);
+                Stroke(center+new Vector2(5,4),center+new Vector2(6,-5),1.4f,color);
+                Stroke(center+new Vector2(-6,-5),center+new Vector2(6,-5),1.4f,color);
+                Fill(new Rect(center.x-1.5f,center.y-1.5f,3,3),new Color(1,.88f,1));
             }
         }
 
@@ -631,10 +706,40 @@ namespace Naispo.Interaction
 
         void DrawRoundClear()
         {
-            GUI.DrawTexture(new Rect(520,290,240,118),panelTexture);
-            GUI.DrawTexture(new Rect(558,307,44,44),coinTexture);
-            GUI.Label(new Rect(616,297,104,64),"+"+CoinsPerRound,scoreStyle);
-            GUI.Label(new Rect(540,371,200,24),$"累計 {TeamScore}",matchHintStyle);
+            float bloom=garden!=null?garden.BloomProgress:0;
+            Color gold=visualConfig!=null?visualConfig.gardenGold:new Color(.94f,.76f,.49f);
+            gold.a=.82f;
+            float pulse=1+Mathf.Sin(Mathf.Clamp01(bloom)*Mathf.PI)*.10f;
+            Matrix4x4 old=GUI.matrix;
+            GUIUtility.ScaleAroundPivot(Vector2.one*pulse,new Vector2(640,330));
+            winStyle.fontSize=58;winStyle.fontStyle=FontStyle.Normal;winStyle.alignment=TextAnchor.MiddleCenter;
+            winStyle.normal.textColor=gold;
+            GUI.Label(new Rect(540,292,200,78),"+"+CoinsPerRound,winStyle);
+            GUI.matrix=old;
+            GUI.Label(new Rect(540,370,200,24),$"累計 {TeamScore}",matchHintStyle);
+
+            // Peripheral runes and restrained gold sparks replace the old opaque card.
+            for(int side=-1;side<=1;side+=2)
+            {
+                float x=640+side*214;
+                Color rune=gold;rune.a=.20f+bloom*.38f;
+                Vector2 previous=new Vector2(x+34,330);
+                for(int i=1;i<=14;i++)
+                {
+                    float angle=i*Mathf.PI*2/14;
+                    Vector2 point=new Vector2(x+Mathf.Cos(angle)*34,330+Mathf.Sin(angle)*34);
+                    Stroke(previous,point,1.4f,rune);previous=point;
+                }
+                Fill(new Rect(x-2,330-2,4,4),rune);
+            }
+            for(int i=0;i<10;i++)
+            {
+                float angle=i*Mathf.PI*2/10+.2f;
+                float inner=64+bloom*18,outer=inner+10;
+                Color spark=gold;spark.a=.12f+bloom*.35f;
+                Stroke(new Vector2(640+Mathf.Cos(angle)*inner,330+Mathf.Sin(angle)*inner),
+                    new Vector2(640+Mathf.Cos(angle)*outer,330+Mathf.Sin(angle)*outer),2,spark);
+            }
         }
         static void Fill(Rect rect,Color color)
         {
@@ -642,6 +747,7 @@ namespace Naispo.Interaction
         }
         void OnGUI()
         {
+            if(!Application.isPlaying) return;
             if(!configured || ExternalOverlayOpen) return;
             EnsureStyles();
             Matrix4x4 matrix=GUI.matrix;
@@ -698,10 +804,18 @@ namespace Naispo.Interaction
         void OnEnable() { if(configured) ApplySimulationState(); }
         void OnDisable()
         {
+            presentationDelta=0f;
             SyncBattleSuspension();
+            SyncSpellSuspension();
+            if(garden!=null)garden.StepPresentation(0,progress.Complete);
             if(ball==null) return;
             ball.CancelBarrierImpact();
             ball.SetGameplaySimulation(false);
+            // A disabled component no longer runs LateUpdate, so suspension must restore
+            // the ball's presentation here instead of leaving a hidden core, corona, and
+            // attached spell glyph offscreen until OnEnable. Spell clocks are untouched;
+            // enabling again replays the warning via SyncSpellSuspension.
+            if(configured && ballView!=null) { RefreshVersusArtwork(); RefreshLighting(); }
         }
         void OnDestroy()
         {
@@ -711,6 +825,8 @@ namespace Naispo.Interaction
             CleanupGardenPresentation();
             if(ballView!=null&&ballView.sprite==ballCoreSprite)ballView.sprite=originalBallSprite;
             Release(ballCoreSprite); Release(ballCoreTexture);
+            for(int i=ownedVisualWrappers.Count-1;i>=0;i--)Release(ownedVisualWrappers[i]);
+            ownedVisualWrappers.Clear();
             Release(arenaRoot); Release(coinSprite); Release(whiteSprite); Release(haloSprite); Release(lightSprite);
             Release(coinTexture); Release(whiteTexture); Release(haloTexture); Release(lightTexture); Release(panelTexture);
             Release(wallMaterial);

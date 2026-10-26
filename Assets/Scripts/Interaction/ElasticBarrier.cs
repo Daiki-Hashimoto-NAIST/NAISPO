@@ -20,7 +20,7 @@ namespace Naispo.Interaction
         Vector2 impactIncoming;
         Vector2 leftHandVelocity, rightHandVelocity;
         double handMotionAt=double.NegativeInfinity;
-        float returnStrength=1, impactBoost;
+        float impactBoost;
         float impactAge, impactDuration, impactDepth, impactStart, impactSide, impactPoint=.5f, ballPoint, ballGap;
         float bendPoint=.5f;
         bool steppingFromPhysics, releaseAfterPhysics;
@@ -155,6 +155,8 @@ namespace Naispo.Interaction
             var gameBall = ball.GetComponent<AirHockeyBall>();
             if(gameBall != null && gameBall.GravityGame && gameBall.CooperativeGame != null)
             {
+                // A contact that cannot be captured still ends Light.
+                gameBall.CooperativeGame.NotifyBarrierContact();
                 // Recover the incoming world velocity, before the solver's moving-wall
                 // impulse. Only our filtered hand samples may add swing acceleration.
                 Vector2 incoming=IncomingVelocity(collision);
@@ -208,7 +210,12 @@ namespace Naispo.Interaction
             if(collision.rigidbody==null || collision.contactCount==0) return;
             var ball=collision.rigidbody.GetComponent<AirHockeyBall>();
             if(ball!=null && ball.GravityGame && ball.CooperativeGame!=null)
+            {
+                // Stay is the only callback for a contact that began before Light
+                // was armed, so it must also cancel the spell.
+                ball.CooperativeGame.NotifyBarrierContact();
                 RemoveUnfilteredImpulse(ball,IncomingVelocity(collision));
+            }
         }
         static void RemoveUnfilteredImpulse(AirHockeyBall ball,Vector2 incoming)
         {
@@ -223,7 +230,8 @@ namespace Naispo.Interaction
             if(ball.CooperativeGame.TryScoreFloorBeforeBarrier(ball.Body.position)) return true;
             if(!ball.BeginBarrierImpact(this)) return false;
             heldBall=ball;impactIncoming=incoming;
-            returnStrength=ball.CooperativeGame.RegisterBarrierReturn(PlayerSide);
+            // Attribution only: spell strength is consumed once at release.
+            ball.CooperativeGame.RegisterBarrierHit(PlayerSide);
             Vector2 local=transform.InverseTransformPoint(ball.Body.position);
             ballPoint=Mathf.Clamp01(local.x/length+.5f);
             impactPoint=Mathf.Clamp(ballPoint,.04f,.96f);
@@ -253,7 +261,7 @@ namespace Naispo.Interaction
             if(heldBall==null || heldBall.CooperativeGame==null) return Vector2.zero;
             UpdateImpactBoost();
             Vector2 normal=(Vector2)transform.up*impactSide;
-            return heldBall.CooperativeGame.BarrierBounce(impactIncoming,normal,softness,heldBall.Body.position,impactBoost)*returnStrength;
+            return heldBall.CooperativeGame.BarrierBounce(impactIncoming,normal,softness,heldBall.Body.position,impactBoost);
         }
         void PositionHeldBall()
         {
