@@ -1,46 +1,60 @@
 # NAISPO
 
-## ふたりで コインラリー
+両手の間に張ったバリアでボールを打ち返す、2人用のUnityゲームです。Azure Kinect DKを1人1台使う入力と、カメラ不要のキーボード操作に対応します。
 
-このブランチ `codex/cooperative-coin-rally` には、2人で低いネットを越えてボールを打ち合い、放物線状に並ぶコインを集める協力モードがあります。Kinect 2台と、カメラ不要の2人用キーボード操作に対応します。
+## 2つのモード
 
-**起動：`Run-CooperativeRally.cmd`**。Unityでは `Naispo > Cooperative Rally > Open` を選びます。操作・カメラ設定・ビルド方法は [協力モードのガイド](COOPERATIVE_RALLY.md) にあります。
+- **星あつめ**：深緑の「光の庭」で、ボールの光を頼りに隠れた星9個を2人で集めます。集めた数は共有され、ボールを落としても星は失いません。
+- **対戦**：SFアリーナで相手側の床にボールを落とすと1点、3点先取で勝ちです。紫のアイテムを取ると、相手の次の返球が弱くなります。
 
-## 元の1台用ゲーム
-
-Azure Kinect DKで両手の動きを読み取り、手と手の間に表示されるバリアでボールを打ち返すUnityのゲームです。
-
-元の `codex/light-coin-game` のシーンでは、重力で落ちるボールを打ち上げてコインを集めます。ボールの周囲だけカメラ映像が見え、その外側には暗いシルエットが残ります。黄色いコインも、ボールの光に照らされて初めて見えます。
+右下の設定アイコン、または左下のモード名から切り替えられます。詳しいルールと調整値は [ふたりのラリーのガイド](COOPERATIVE_RALLY.md) を参照してください。
 
 ## 遊び方
 
-両手を広げると、その間にバリアが表示されます。バリアを傾けてボールの飛ぶ方向を変え、コインに当ててください。手幅を狭くすると強く打ち返せます。広くすると反発が弱まり、バリアが大きくたわみます。
+バリアを傾けて返球方向を変え、手幅を狭くすると強く、広くすると弱く返せます。ボールはバリアに少し沈み込んでから跳ね返り、押し返す方向への手の動きも加速に反映します。
 
-コイン6個を集めると次のラウンドへ進みます。ボールが画面下へ落ちた場合は、0.8秒後に中央上から再登場します。獲得済みのコインは失いません。
+最初はキーボード操作の「DEMO」で起動します。
 
-| 画面のボタン | 操作 |
-|---|---|
-| `Ball light: ON/OFF` | ボールの照明を切り替えます。OFFの間はコインも表示・取得されません。 |
-| `Mode: Hand walls` | 両手バリアと、体のシルエットでボールを押す方式を切り替えます。 |
-| `Restart game` | スコアとコインの配置を初期化します。 |
+| 操作 | 左の人 | 右の人 |
+|---|---|---|
+| 移動 | W / A / S / D | 矢印キー |
+| バリアを傾ける | Q / E | J / L |
+| 手幅を変える | Z / X | U / O |
+
+各自のコートをマウスでドラッグしても位置を動かせます。Kinectを使う場合は、設定画面の「カメラ」で「自動設定」を選び、「保存してKinectを開始」を押します。設置方法と接続診断は [Kinect 2台で遊ぶ](COOPERATIVE_RALLY.md#kinect-2台で遊ぶ) を参照してください。
 
 ## 起動方法
 
-Windows x64、Azure Kinect DK、Unity 6000.6.5f1、Git LFSを使います。
+Windows x64、Unity 6000.6.5f1、Git LFS、.NET 10 SDKを使用します。ビルド済みの実行ファイルはリポジトリに含めていません。
 
-1. リポジトリを取得し、`codex/light-coin-game` ブランチに切り替えます。
-2. リポジトリ内で `git lfs pull` を実行します。人体認識モデルが約167MBの実ファイルになっていることを確認してください。
-3. Unityでプロジェクトを開き、`Naispo > Build Windows Demo` を選びます。`Builds/Windows/Naispo.exe` が作成されます。
-4. Kinectに電源とUSBを接続し、背面ランプの白点灯を確認します。Kinect Viewerなど、同じセンサーを使うアプリは終了してください。
-5. リポジトリ直下の `Run-Naispo.cmd` を実行します。
+1. リポジトリの `main` を取得し、リポジトリ内で `git lfs pull` を実行します。SDKのDLLと人体認識モデルを取得します。
+2. PowerShellで `./Tools/KinectWorker/Build.ps1` を実行し、Kinect用のWorkerをビルドします。.NET SDKの場所を指定する場合は `-DotNetPath "path/to/dotnet.exe"` を追加します。
+3. Unityでプロジェクトを開き、`Naispo > Cooperative Rally > Build Windows` を選びます。
+4. リポジトリ直下の **`Run-CooperativeRally.cmd`** を実行します。
 
-起動スクリプトはビルドを `%USERPROFILE%/NaispoRuntime` にコピーして実行します。日本語を含むパスでSensor SDKのエラーが出た環境への対処です。実行先のパスは英数字にしてください。起動ログは同じフォルダーの `Player.log` に保存されます。
+Unity Editorで遊ぶ場合は `Naispo > Cooperative Rally > Open` で専用シーンを開き、Playを押します。通常のBuild Settingsには旧1台版のシーンが残っているため、2人用のビルドには上記の専用メニューを使います。
 
-SDKのDLLと人体認識モデルはプロジェクトに含まれます。モデルの取得にはGit LFSが必要です。ビルド済みの実行ファイルはリポジトリに含めていません。
+生成先は `Builds/CooperativeRally` です。配布する場合はこのフォルダー全体が必要です。Workerの.NETランタイムも含まれるため、配布先PCへの.NET SDKの導入は不要です。
+
+起動スクリプトはビルドを `%USERPROFILE%/NaispoCoopRuntime` にコピーして実行します。日本語を含む実行パスで発生したKinect SDKの問題を避けるため、実行先は英数字のパスにしてください。起動ログは同じフォルダーの `Player.log` に保存されます。
+
+更新時はWorkerとWindows版の両方を再ビルドしてください。Gitの更新だけでは、既存の実行ファイルは変わりません。
+
+## 元の1台用ゲーム
+
+光で照らしたコイン6個を集める旧1台版も、同じリポジトリに残っています。ブランチの切り替えは不要です。
+
+- Editorで開く：`Naispo > Open Kinect Demo`
+- ビルド：`Naispo > Build Windows Demo`
+- 実行：`Run-Naispo.cmd`（生成先は `Builds/Windows`、実行先は `%USERPROFILE%/NaispoRuntime`）
+
+ルールと画面の操作は [旧コインゲームのガイド](LIGHT_COIN_GAME.md) を参照してください。
 
 ## 設定と資料
 
-- [コインゲームのルールと調整値](LIGHT_COIN_GAME.md)
+- [2人用のルール・操作・カメラ設定](COOPERATIVE_RALLY.md)
+- [2人用の検証記録](Documentation/Validation/cooperative-rally.md)
+- [旧コインゲームのルールと調整値](LIGHT_COIN_GAME.md)
 - [ボール照明の仕組みと設定](BALL_LIGHT.md)
 - [弾性バリアの仕組みと設定](ELASTIC_BARRIER.md)
 
@@ -50,6 +64,8 @@ SDKのDLLと人体認識モデルはプロジェクトに含まれます。モ�
 
 ## 動作確認
 
-2026年10月16日、Unity 6000.6.5f1で28件のテストとWindowsビルドが成功しました。実機では1人の追跡とカラー映像の取得が約30 FPSで動作し、バリアでボールを打ち上げてコインを獲得できることを確認しています。複数人での操作感と長時間のプレイは未確認です。
+2026年10月23日、2人用のWindowsビルドとデモ操作を確認しました。前進中の逆向き返球の修正、物理・演出の重点テストも成功しています。実施したテストと結果は [検証記録](Documentation/Validation/cooperative-rally.md) にあります。
+
+この版でのKinect実機2台・2人プレイ、最新修正の操作感、長時間の安定性は未確認です。旧1台版で確認した実機動作の記録とは区別しています。
 
 SDKのライセンスは `Documentation/Licenses`、同梱ファイルの記録は `Documentation/SDK_COPY_MANIFEST.json` にあります。
