@@ -91,7 +91,9 @@ namespace Naispo.Interaction
             moteSprite = CreateOwnedTextureSprite(CreateGlowTexture(32), "Life mote");
 
             BuildBackdrop(camera);
-            BuildArchitecture(halfWidth, floorY, camera);
+            // A supplied painting already contains the architecture and foliage.
+            // Keep the living buds separate so collection still animates the room.
+            if (!backdropConfigured) BuildArchitecture(halfWidth, floorY, camera);
             BuildBuds(halfWidth, floorY, camera);
             ApplyVisuals();
             RefreshLayout();
@@ -180,7 +182,7 @@ namespace Naispo.Interaction
                 // Imported backgrounds cover preserving aspect; generated fallback art
                 // (e.g. 512x288 authored with PPU=width) stretches to the whole viewport.
                 RallySceneryArtwork.FitSpriteToViewport(backdrop, backdropSprite, viewportCenter,
-                    width, height, backdropConfigured);
+                    width, height, backdropConfigured, config != null ? config.backgroundVerticalAlignment : .5f);
             }
             if (veil != null)
             {
@@ -470,8 +472,10 @@ namespace Naispo.Interaction
                 float nx = Mathf.Abs((x + .5f) / width * 2 - 1);
                 float ny = Mathf.Abs((y + .5f) / height * 2 - 1);
                 float center = 1 - Mathf.SmoothStep(0, 1, Mathf.InverseLerp(.18f, .92f, Mathf.Max(nx * .82f, ny)));
-                // Keep the center 65-70 percent dark and let the edges fall away.
-                pixels[y * width + x] = new Color(dark.r, dark.g, dark.b, center * .48f);
+                // The painted room already has a quiet center; preserve its detail
+                // and edge lighting while keeping the ball and stars legible.
+                float opacity = backdropConfigured ? .24f : .48f;
+                pixels[y * width + x] = new Color(dark.r, dark.g, dark.b, center * opacity);
             }
             texture.SetPixels32(pixels);
             texture.Apply(false, true);

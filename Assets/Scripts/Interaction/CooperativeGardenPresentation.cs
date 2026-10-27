@@ -50,7 +50,8 @@ namespace Naispo.Interaction
                 SetTextureColor(buttonNormal,IsVersus?new Color(.10f,.075f,.15f):new Color(.045f,.13f,.13f));
                 SetTextureColor(buttonHover,IsVersus?new Color(.17f,.12f,.24f):new Color(.08f,.21f,.20f));
                 SetTextureColor(buttonPressed,IsVersus?new Color(.25f,.18f,.34f):new Color(.13f,.31f,.28f));
-                smallStyle.normal.textColor=goalStyle.normal.textColor=IsVersus ? new Color(.70f,.66f,.80f) : new Color(.58f,.72f,.68f);
+                smallStyle.normal.textColor=IsVersus ? new Color(.70f,.66f,.80f) : new Color(.58f,.72f,.68f);
+                goalStyle.normal.textColor=IsVersus ? new Color(.82f,.78f,.92f) : new Color(.83f,.87f,.78f);
                 leftScoreStyle.normal.textColor=PlayerColor(-1);
                 rightScoreStyle.normal.textColor=PlayerColor(1);
                 titleStyle.normal.textColor=bodyStyle.normal.textColor=centeredStyle.normal.textColor=
@@ -97,6 +98,16 @@ namespace Naispo.Interaction
         }
         void DrawBottomControls()
         {
+            bool painted = IsVersus ? cyber != null && cyber.UsesConfiguredBackground
+                : garden != null && garden.UsesConfiguredBackground;
+            if(painted)
+            {
+                // Local backing keeps the controls readable over reflective floors
+                // without covering the room with a full-width footer.
+                Color backing=IsVersus ? new Color(.035f,.025f,.06f,.80f) : new Color(.012f,.035f,.038f,.80f);
+                Fill(new Rect(34,680,166,38),backing);
+                Fill(new Rect(1134,680,104,38),backing);
+            }
             GUI.enabled=!settingsOpen;
             if(GUI.Button(new Rect(42,682,150,34),IsVersus ? "対戦  ▾" : "星あつめ  ▾",quietButtonStyle))
             { settingsOpen=true;ApplySimulationState(); }

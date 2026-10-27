@@ -606,12 +606,12 @@ namespace Naispo.Interaction
             GUI.BeginGroup(card);
             float start=(card.width-(32+12+countWidth+8+goalWidth))*.5f;
             GUI.DrawTexture(new Rect(start,10+(rowHeight-32)*.5f,32,32),coinTexture);
-            GUI.Label(new Rect(start+44,10,countWidth,rowHeight),count,collectionCountStyle);
-            GUI.Label(new Rect(start+52+countWidth,10,goalWidth,rowHeight),goal,goalStyle);
+            DrawHudLabel(new Rect(start+44,10,countWidth,rowHeight),count,collectionCountStyle);
+            DrawHudLabel(new Rect(start+52+countWidth,10,goalWidth,rowHeight),goal,goalStyle);
             for(int i=0;i<CoinsPerRound;i++)
             {
                 Color old=GUI.color;
-                GUI.color=i<CollectedCount ? new Color(1,.91f,.64f) : new Color(.32f,.43f,.35f,.7f);
+                GUI.color=i<CollectedCount ? new Color(1,.91f,.64f) : new Color(.56f,.65f,.58f,.85f);
                 GUI.DrawTexture(new Rect(93+i*14,rowHeight+12,10,10),haloTexture);
                 GUI.color=old;
             }
@@ -633,15 +633,24 @@ namespace Naispo.Interaction
             bool scored=lastPointWinner==side && age<1.15f;
             float pop=scored ? Mathf.Sin(Mathf.Clamp01(age/.42f)*Mathf.PI) : 0;
             style.fontSize=Mathf.RoundToInt(52+pop*26);
-            GUI.Label(new Rect(x-8,32-pop*4,116,92),score.ToString(),style);
+            DrawHudLabel(new Rect(x-8,32-pop*4,116,92),score.ToString(),style);
             for(int i=0;i<RallyVersusState.PointsToWin;i++)
             {
-                Color pip=color; pip.a=i<score ? 1 : .18f;
+                Color pip=color; pip.a=i<score ? 1 : .35f;
                 float size=scored && i==score-1 ? 6+pop*5 : 6;
                 Fill(new Rect(x+35+i*14-size*.5f,129-size*.5f,size,size),pip);
             }
             if(ActiveSpell!=RallySpell.None && SpellOwner==side)
                 DrawSpellIcon(new Vector2(x+84,170),ActiveSpell);
+        }
+
+        static void DrawHudLabel(Rect rect,string text,GUIStyle style)
+        {
+            Color ink=style.normal.textColor;
+            style.normal.textColor=new Color(.008f,.014f,.025f,.90f);
+            GUI.Label(new Rect(rect.x+2,rect.y+2,rect.width,rect.height),text,style);
+            style.normal.textColor=ink;
+            GUI.Label(rect,text,style);
         }
 
         static void Stroke(Vector2 from,Vector2 to,float thickness,Color color)

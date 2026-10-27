@@ -43,7 +43,8 @@ namespace Naispo.Interaction
 
             lineSprite = CreateOwnedTextureSprite(NewSolidTexture(), "Dueling hall line");
             BuildBackdrop(camera);
-            BuildHall(halfWidth, matchFloor, camera);
+            // Supplied hall artwork replaces only scenery, never the physical net.
+            if (!backdropConfigured) BuildHall(halfWidth, matchFloor, camera);
             BuildNet();
             if (!netConfigured) SetNet(matchFloor + 2, matchFloor - 1);
             scenery.SetActive(visible);
@@ -77,7 +78,7 @@ namespace Naispo.Interaction
             if (backdrop != null)
             {
                 RallySceneryArtwork.FitSpriteToViewport(backdrop, backdropSprite, viewportCenter,
-                    width, height, backdropConfigured);
+                    width, height, backdropConfigured, config != null ? config.backgroundVerticalAlignment : .5f);
             }
             if (veil != null)
             {
@@ -279,7 +280,8 @@ namespace Naispo.Interaction
                 float nx = Mathf.Abs((x + .5f) / width * 2 - 1);
                 float ny = Mathf.Abs((y + .5f) / height * 2 - 1);
                 float center = 1 - Mathf.SmoothStep(0, 1, Mathf.InverseLerp(.18f, .92f, Mathf.Max(nx * .82f, ny)));
-                pixels[y * width + x] = new Color(dark.r, dark.g, dark.b, center * .50f);
+                float opacity = backdropConfigured ? .30f : .50f;
+                pixels[y * width + x] = new Color(dark.r, dark.g, dark.b, center * opacity);
             }
             texture.SetPixels32(pixels);
             texture.Apply(false, true);

@@ -68,7 +68,7 @@ namespace Naispo.Interaction
         /// offset is removed so imported artwork stays centered on the camera.
         /// </summary>
         public static void FitSpriteToViewport(Transform target, Sprite sprite, Vector3 viewportCenter,
-            float viewportWidth, float viewportHeight, bool preserveAspect)
+            float viewportWidth, float viewportHeight, bool preserveAspect, float verticalAlignment = .5f)
         {
             if (target == null || sprite == null) return;
             Vector3 boundsSize = sprite.bounds.size;
@@ -86,9 +86,13 @@ namespace Naispo.Interaction
                     viewportHeight / safeHeight * 1.01f, 1);
             }
             Vector3 pivotOffset = Vector3.Scale(sprite.bounds.center, scale);
+            // Only distribute the excess height, so every alignment still covers the
+            // viewport. The default keeps existing centered art and veils unchanged.
+            float verticalOffset = preserveAspect ? (.5f - Mathf.Clamp01(verticalAlignment)) *
+                Mathf.Max(0, safeHeight * scale.y - viewportHeight) : 0;
             target.localScale = scale;
             target.position = new Vector3(viewportCenter.x - pivotOffset.x,
-                viewportCenter.y - pivotOffset.y, 0);
+                viewportCenter.y - pivotOffset.y + verticalOffset, 0);
         }
 
         public static SpriteRenderer AddRenderer(Transform parent, string objectName, Sprite sprite,

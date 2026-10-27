@@ -32,6 +32,8 @@ namespace Naispo.Interaction
         [Header("Optional collection replacements")]
         public Sprite collectionBackground;
         public Sprite battleBackground;
+        [Tooltip("Vertical crop anchor for background art: 0 keeps the bottom, 1 keeps the top.")]
+        [Range(0, 1)] public float backgroundVerticalAlignment = .5f;
         public Sprite ball;
         public Sprite star;
         public Sprite bud;
