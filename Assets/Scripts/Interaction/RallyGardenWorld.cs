@@ -206,6 +206,11 @@ namespace Naispo.Interaction
             backdropSprite = configured ?? CreateOwnedTextureSprite(CreateBackgroundTexture(), "Midnight glasshouse background");
             var background = RallySceneryArtwork.AddRenderer(scenery.transform, "Midnight glasshouse background",
                 backdropSprite, Color.white, -90, simple: true);
+            if (backdropConfigured)
+            {
+                var material = Own(RallySceneryArtwork.CreateBackdropMaterial(backdropSprite, config));
+                if (material != null) background.sharedMaterial = material;
+            }
             backdrop = background.transform;
 
             veilSprite = CreateOwnedTextureSprite(CreateVeilTexture(), "Glasshouse center veil");

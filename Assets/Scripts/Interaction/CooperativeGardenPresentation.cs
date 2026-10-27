@@ -38,11 +38,11 @@ namespace Naispo.Interaction
                 string name=view.name;
                 if(name.Contains("wash")||name=="Upper boundary") view.color=Color.clear;
                 else if(name.Contains("outer wall")) view.color=new Color(.055f,.16f,.15f,.30f);
-                else if(name=="Left baseline") view.color=new Color(PlayerColor(-1).r,PlayerColor(-1).g,PlayerColor(-1).b,.28f);
-                else if(name=="Right baseline") view.color=new Color(PlayerColor(1).r,PlayerColor(1).g,PlayerColor(1).b,.28f);
-                else if(name=="Low center net") view.color=new Color(.44f,.63f,.52f,.24f);
-                else if(name=="Net top") view.color=new Color(.86f,.73f,.44f,.85f);
-                else view.color=new Color(.53f,.70f,.55f,.34f);
+                else if(name=="Left baseline") view.color=new Color(PlayerColor(-1).r,PlayerColor(-1).g,PlayerColor(-1).b,.52f);
+                else if(name=="Right baseline") view.color=new Color(PlayerColor(1).r,PlayerColor(1).g,PlayerColor(1).b,.52f);
+                else if(name=="Low center net") view.color=new Color(.52f,.73f,.63f,.38f);
+                else if(name=="Net top") view.color=new Color(.94f,.86f,.62f,.95f);
+                else view.color=new Color(.65f,.81f,.70f,.50f);
             }
             if(panelTexture!=null)
             {

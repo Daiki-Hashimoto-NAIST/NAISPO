@@ -101,6 +101,7 @@ namespace Naispo.Interaction
             var renderer=viewObject.AddComponent<SilhouetteRenderer>();
             renderer.settings=settings;renderer.mapper=mapper;renderer.silhouetteMaterial=silhouetteMaterial;
             renderer.LightEnabled=false;
+            SetPlayerOutline(renderer,color);
             var manager=root.AddComponent<KinectSilhouetteManager>();
             manager.autoAddCoinGame=false;manager.showControls=false;
             manager.settings=settings;manager.mapper=mapper;manager.silhouetteRenderer=renderer;
@@ -157,6 +158,11 @@ namespace Naispo.Interaction
                 : (config!=null?config.playerGold:new Color(.94f,.76f,.49f));
         }
 
+        static void SetPlayerOutline(SilhouetteRenderer renderer,Color color)
+        {
+            renderer.SetOutline(new Color(color.r*.75f,color.g*.75f,color.b*.75f,.8f),1.65f);
+        }
+
         void ApplyPlayerPalette()
         {
             bool versus=Game.IsVersus;
@@ -171,6 +177,7 @@ namespace Naispo.Interaction
                 for(int index=0;index<settings.barrierColors.Length;index++)settings.barrierColors[index]=color;
                 for(int index=0;index<settings.personColors.Length;index++)
                     settings.personColors[index]=index==0 ? new Color(color.r*silhouetteBrightness,color.g*silhouetteBrightness,color.b*silhouetteBrightness,1) : color;
+                SetPlayerOutline(Players[slot].silhouetteRenderer,color);
                 handWalls[slot].SetPresentation(color,!versus);
             }
         }

@@ -34,6 +34,16 @@ namespace Naispo.Interaction
         public Sprite battleBackground;
         [Tooltip("Vertical crop anchor for background art: 0 keeps the bottom, 1 keeps the top.")]
         [Range(0, 1)] public float backgroundVerticalAlignment = .5f;
+
+        [Header("Painted background readability")]
+        [Tooltip("Background-only softening radius in screen pixels at a 1280-pixel viewport width.")]
+        [Range(0, 4)] public float backgroundBlurPixels = 2f;
+        [Range(0, 1)] public float backgroundSaturation = .72f;
+        [Range(.2f, 1)] public float backgroundBrightness = .8f;
+        [Tooltip("Reduces bright painted highlights without dimming gameplay sprites or changing the ball light.")]
+        [Range(0, 1)] public float backgroundHighlightCompression = .65f;
+
+        [Header("Optional foreground replacements")]
         public Sprite ball;
         public Sprite star;
         public Sprite bud;

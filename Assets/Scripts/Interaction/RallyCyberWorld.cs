@@ -101,6 +101,11 @@ namespace Naispo.Interaction
             backdropSprite = configured ?? CreateOwnedTextureSprite(CreateSkyTexture(), "Violet dueling hall background");
             var background = RallySceneryArtwork.AddRenderer(scenery.transform, "Violet dueling hall background",
                 backdropSprite, Color.white, -90, simple: true);
+            if (backdropConfigured)
+            {
+                var material = Own(RallySceneryArtwork.CreateBackdropMaterial(backdropSprite, config));
+                if (material != null) background.sharedMaterial = material;
+            }
             backdrop = background.transform;
 
             veilSprite = CreateOwnedTextureSprite(CreateVeilTexture(), "Dueling hall center veil");
@@ -218,9 +223,9 @@ namespace Naispo.Interaction
             netHalo = RallySceneryArtwork.AddRenderer(scenery.transform, "Center net soft edge",
                 CreateOwnedTextureSprite(CreateNetTexture(true), "Dueling net glow"), Color.white, 3);
             topCap = RallySceneryArtwork.AddRenderer(scenery.transform, "Center net top cap", lineSprite,
-                new Color(.78f, .61f, .38f, .78f), 3);
+                new Color(.94f, .88f, .78f, .96f), 3);
             floorCap = RallySceneryArtwork.AddRenderer(scenery.transform, "Center net floor cap", lineSprite,
-                new Color(.68f, .50f, .32f, .55f), 3);
+                new Color(.83f, .77f, .94f, .86f), 3);
         }
 
         void UpdateNet()
@@ -294,14 +299,14 @@ namespace Naispo.Interaction
             const int height = 64;
             var texture = RallySceneryArtwork.NewTexture(width, height, soft ? "Dueling net bloom" : "Dueling net light");
             var pixels = new Color32[width * height];
-            Color bronze = config != null ? config.battleBronze : new Color(.63f, .43f, .24f);
             Color violet = config != null ? config.battleViolet : new Color(.53f, .33f, .74f);
+            Color ivory = config != null ? config.ballIvory : new Color(1f, .995f, .96f);
             for (int y = 0; y < height; y++)
             for (int x = 0; x < width; x++)
             {
                 float t = y / (float)(height - 1);
-                Color color = Color.Lerp(new Color(bronze.r, bronze.g, bronze.b, .20f),
-                    new Color(violet.r, violet.g, violet.b, .92f), t);
+                Color color = Color.Lerp(Color.Lerp(violet, ivory, .52f), ivory, t * .62f);
+                color.a = Mathf.Lerp(.68f, .94f, t);
                 if (soft)
                 {
                     float horizontal = Mathf.Abs((x + .5f) / width * 2 - 1);

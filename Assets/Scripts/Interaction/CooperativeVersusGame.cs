@@ -120,9 +120,9 @@ namespace Naispo.Interaction
         void BuildVersusArtwork()
         {
             versusLeftFloor = Rectangle("Left match floor", new Vector2(center.x - halfWidth * .5f, MatchFloor),
-                new Vector2(halfWidth - .25f, .022f), new Color(PlayerColor(-1).r, PlayerColor(-1).g, PlayerColor(-1).b, .48f), 2);
+                new Vector2(halfWidth - .25f, .035f), new Color(PlayerColor(-1).r, PlayerColor(-1).g, PlayerColor(-1).b, .75f), 2);
             versusRightFloor = Rectangle("Right match floor", new Vector2(center.x + halfWidth * .5f, MatchFloor),
-                new Vector2(halfWidth - .25f, .022f), new Color(PlayerColor(1).r, PlayerColor(1).g, PlayerColor(1).b, .48f), 2);
+                new Vector2(halfWidth - .25f, .035f), new Color(PlayerColor(1).r, PlayerColor(1).g, PlayerColor(1).b, .75f), 2);
             BuildBallSpellArtwork();
             versusPickupRoot = CreateChild("Spell pickups", arenaRoot.transform);
             for (int i = 0; i < pickupSlots.Length; i++)

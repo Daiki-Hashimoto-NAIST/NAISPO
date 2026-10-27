@@ -22,6 +22,11 @@ namespace Naispo.Silhouette
         readonly Vector3[] vertices = new Vector3[4];
         int mapRevision = -1;
         MeshRenderer view;
+        Color outlineColor;
+        float outlineWidth;
+        bool outlineConfigured;
+        static readonly int OutlineColorId=Shader.PropertyToID("_OutlineColor");
+        static readonly int OutlineWidthId=Shader.PropertyToID("_OutlineWidth");
         static readonly ProfilerMarker UploadMarker=new ProfilerMarker("Naispo.Silhouette.TextureUpload");
 
         void Awake()
@@ -34,10 +39,28 @@ namespace Naispo.Silhouette
             GetComponent<MeshFilter>().sharedMesh = mesh;
             material = new Material(silhouetteMaterial);
             if(settings != null && settings.ballLightShader != null) material.shader = settings.ballLightShader;
+            ApplyOutline();
             view = GetComponent<MeshRenderer>();
             view.sharedMaterial = material;
             view.sortingOrder = 0;
             view.enabled = false;
+        }
+
+        // Opt-in presentation on this renderer's material, shared by demo and camera masks.
+        // The contour stays inside the mask and never changes its alpha or collision shape.
+        public void SetOutline(Color color,float screenPixels)
+        {
+            outlineColor=color;
+            outlineWidth=Mathf.Clamp(screenPixels,0,4);
+            outlineConfigured=true;
+            ApplyOutline();
+        }
+
+        void ApplyOutline()
+        {
+            if(!outlineConfigured || material==null || !material.HasProperty(OutlineWidthId))return;
+            material.SetColor(OutlineColorId,outlineColor);
+            material.SetFloat(OutlineWidthId,outlineWidth);
         }
 
         void Start()

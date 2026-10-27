@@ -9,6 +9,35 @@ namespace Naispo.Interaction
     /// </summary>
     public static class RallySceneryArtwork
     {
+        /// <summary>
+        /// Creates a material only for a validated, un-atlased painted backdrop.
+        /// The caller owns the returned material; the source image stays untouched.
+        /// Keeping the shader in Resources also retains it in player builds.
+        /// </summary>
+        public static Material CreateBackdropMaterial(Sprite sprite, RallyVisualConfig config)
+        {
+            if (sprite == null || sprite.texture == null || sprite.packed || config == null) return null;
+            var shader = Resources.Load<Shader>("RallyBackdropSoftening");
+            if (shader == null || !shader.isSupported) return null;
+            var material = new Material(shader)
+            {
+                name = "Painted backdrop softening",
+                hideFlags = HideFlags.DontSave
+            };
+            material.SetFloat("_BlurPixels", Mathf.Clamp(config.backgroundBlurPixels, 0, 4));
+            material.SetFloat("_Saturation", Mathf.Clamp01(config.backgroundSaturation));
+            material.SetFloat("_Brightness", Mathf.Clamp(config.backgroundBrightness, .2f, 1));
+            material.SetFloat("_HighlightCompression", Mathf.Clamp01(config.backgroundHighlightCompression));
+            // A replacement may use only part of a larger texture. Blur taps stay
+            // inside that rect, including its half-texel border, without requiring
+            // Read/Write access or modifying the imported texture's wrap mode.
+            Rect rect = sprite.rect;
+            float width = sprite.texture.width, height = sprite.texture.height;
+            material.SetVector("_UvRect", new Vector4((rect.xMin + .5f) / width,
+                (rect.yMin + .5f) / height, (rect.xMax - .5f) / width, (rect.yMax - .5f) / height));
+            return material;
+        }
+
         public static Texture2D NewTexture(int width, int height, string textureName)
         {
             return new Texture2D(width, height, TextureFormat.RGBA32, false)
