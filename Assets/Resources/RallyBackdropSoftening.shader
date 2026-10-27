@@ -72,15 +72,10 @@ Shader "Naispo/PaintedBackdropSoftening"
                 half4 center = ReadBackground(input.uv);
                 half4 blurred = SAMPLE_TEXTURE2D(_BlurredTex, sampler_BlurredTex,
                     clamp(input.uv, _UvRect.xy, _UvRect.zw));
-                float2 roomUv = saturate((input.uv - _UvRect.xy) / max(_UvRect.zw - _UvRect.xy, 0.00001));
-                // Suggested depth in the painted room, not a blur over the whole
-                // image: preserve the near columns, floor, upper glass and moon.
-                float sideDistance = min(roomUv.x, 1.0 - roomUv.x);
-                float depth = smoothstep(0.20, 0.39, sideDistance)
-                    * smoothstep(0.17, 0.34, roomUv.y)
-                    * (1.0 - smoothstep(0.68, 0.83, roomUv.y));
+                // Each cached pixel already has the appropriate blur radius for
+                // its painted depth; no screen-space center mask is needed.
                 half3 softColor = blurred.rgb / max(blurred.a, 0.0001h);
-                half3 color = lerp(center.rgb, softColor, depth * _HasBlurredTex);
+                half3 color = lerp(center.rgb, softColor, _HasBlurredTex);
                 half luminance = dot(color, half3(0.2126h, 0.7152h, 0.0722h));
                 color = lerp(luminance.xxx, color, _Saturation);
                 // Compress only brighter painted details. Shadows keep their room

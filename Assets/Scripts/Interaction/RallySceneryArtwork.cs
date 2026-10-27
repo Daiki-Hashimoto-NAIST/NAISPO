@@ -15,7 +15,7 @@ namespace Naispo.Interaction
         /// Keeping the shader in Resources also retains it in player builds.
         /// </summary>
         public static Material CreateBackdropMaterial(Sprite sprite, RallyVisualConfig config,
-            out RenderTexture blurredTexture)
+            out RenderTexture blurredTexture, RallyBackdropDepthProfile depthProfile = RallyBackdropDepthProfile.Uniform)
         {
             blurredTexture = null;
             if (sprite == null || sprite.texture == null || sprite.packed || config == null) return null;
@@ -34,24 +34,27 @@ namespace Naispo.Interaction
             var uvRect = new Vector4((rect.xMin + .5f) / width,
                 (rect.yMin + .5f) / height, (rect.xMax - .5f) / width, (rect.yMax - .5f) / height);
             material.SetVector("_UvRect", uvRect);
-            // Bake once at the source resolution. The display shader blends this
-            // with the sharp original only in the distant middle of the room.
+            // Bake once at source resolution with a radius that grows along the
+            // authored scene depth, while preserving crisp foreground surfaces.
             float sigma = Mathf.Clamp(config.backgroundBlurPixels, 0, 6) * rect.width / 1280f;
-            blurredTexture = CreateBlurredBackdrop(sprite.texture, uvRect, sigma);
+            blurredTexture = CreateBlurredBackdrop(sprite, uvRect, sigma, depthProfile);
             material.SetFloat("_HasBlurredTex", blurredTexture != null ? 1 : 0);
             if (blurredTexture != null) material.SetTexture("_BlurredTex", blurredTexture);
             return material;
         }
 
-        static RenderTexture CreateBlurredBackdrop(Texture2D source, Vector4 uvRect, float sigma)
+        static RenderTexture CreateBlurredBackdrop(Sprite sprite, Vector4 uvRect, float sigma,
+            RallyBackdropDepthProfile depthProfile)
         {
             if (sigma < .01f || !SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBHalf)) return null;
             var shader = Resources.Load<Shader>("RallyBackdropGaussian");
             if (shader == null || !shader.isSupported) return null;
+            Texture2D source = sprite.texture;
             RenderTexture previous = RenderTexture.active;
             bool previousSrgbWrite = GL.sRGBWrite;
             RenderTexture temporary = null, result = null;
             Material filter = null;
+            Texture2D depthTexture = null;
             bool completed = false;
             try
             {
@@ -59,6 +62,10 @@ namespace Naispo.Interaction
                 filter.SetVector("_UvRect", uvRect);
                 filter.SetFloat("_Sigma", sigma);
                 filter.SetInt("_KernelRadius", Mathf.Min(32, Mathf.CeilToInt(sigma * 3)));
+                if (depthProfile != RallyBackdropDepthProfile.Uniform)
+                    depthTexture = RallyBackdropDepth.CreateTexture(sprite, depthProfile);
+                filter.SetFloat("_HasDepthTex", depthTexture != null ? 1 : 0);
+                if (depthTexture != null) filter.SetTexture("_DepthTex", depthTexture);
                 result = new RenderTexture(source.width, source.height, 0,
                     RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear)
                 {
@@ -90,6 +97,10 @@ namespace Naispo.Interaction
                 if (filter != null)
                 {
                     if (Application.isPlaying) Object.Destroy(filter); else Object.DestroyImmediate(filter);
+                }
+                if (depthTexture != null)
+                {
+                    if (Application.isPlaying) Object.Destroy(depthTexture); else Object.DestroyImmediate(depthTexture);
                 }
                 if (!completed && result != null)
                 {

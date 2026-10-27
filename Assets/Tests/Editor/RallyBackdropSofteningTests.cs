@@ -92,6 +92,121 @@ namespace Naispo.Tests
                 "Unpremultiplying the cached boundary must restore the visible green color.");
         }
 
+        [Test]
+        public void DetailContrastDecreasesWithDepthWhileNearPaintAndMeanColorStayUnchanged()
+        {
+            const int width = 256, height = 96;
+            var dark = new Color32(32, 32, 32, 255);
+            var light = new Color32(224, 224, 224, 255);
+            var pixels = new Color32[width * height];
+            var depth = new Color32[pixels.Length];
+            for (int y = 0; y < height; y++)
+            {
+                byte distance = y < 32 ? (byte)0 : y < 64 ? (byte)102 : (byte)255;
+                for (int x = 0; x < width; x++)
+                {
+                    pixels[y * width + x] = x % 8 < 4 ? dark : light;
+                    depth[y * width + x] = new Color32(distance, distance, distance, 255);
+                }
+            }
+            var colors = Readback(BakeDepth(pixels, depth, width, height));
+            StripeStatistics(colors, width, 16, out float nearMean, out float nearContrast);
+            StripeStatistics(colors, width, 48, out float middleMean, out float middleContrast);
+            StripeStatistics(colors, width, 80, out float farMean, out float farContrast);
+            float darkLinear = ((Color)dark).linear.r, lightLinear = ((Color)light).linear.r;
+            float expectedMean = (darkLinear + lightLinear) * .5f;
+
+            Assert.That(nearContrast, Is.EqualTo(lightLinear - darkLinear).Within(.001f),
+                "Zero depth must preserve the original fine detail.");
+            Assert.That(middleContrast, Is.GreaterThan(nearContrast * .25f).And.LessThan(nearContrast * .9f),
+                "Middle depth must use an intermediate radius, not switch directly to the far blur.");
+            Assert.That(farContrast, Is.LessThan(middleContrast * .3f),
+                "The far plane must remove substantially more fine detail than the middle plane.");
+            foreach (float mean in new[] { nearMean, middleMean, farMean })
+                Assert.That(mean, Is.EqualTo(expectedMean).Within(.002f),
+                    "Increasing depth must soften detail without darkening the paint.");
+        }
+
+        [Test]
+        public void DistantPaintDoesNotInheritForegroundColorAcrossEitherBlurAxis()
+        {
+            const int width = 128, height = 64;
+            var near = new Color32(255, 0, 0, 255);
+            var far = new Color32(0, 64, 255, 255);
+            var pixels = Filled(width * height, near);
+            var depth = Filled(width * height, new Color32(0, 0, 0, 255));
+            for (int y = height / 2; y < height; y++)
+                for (int x = width / 2; x < width; x++)
+                {
+                    pixels[y * width + x] = far;
+                    depth[y * width + x] = new Color32(255, 255, 255, 255);
+                }
+            var colors = Readback(BakeDepth(pixels, depth, width, height));
+
+            // The far corner touches foreground on both axes. A normal Gaussian
+            // would mix red into it during both horizontal and vertical passes.
+            AssertColor(colors[(height / 2) * width + width / 2], ((Color)far).linear, .001f);
+            AssertColor(colors[(height / 2 + 1) * width + width / 2], ((Color)far).linear, .001f);
+            AssertColor(colors[(height / 2) * width + width / 2 + 1], ((Color)far).linear, .001f);
+            AssertColor(colors[(height / 2) * width + width / 2 - 1], ((Color)near).linear, .001f);
+            AssertColor(colors[(height / 2 - 1) * width + width / 2], ((Color)near).linear, .001f);
+        }
+
+        RenderTexture BakeDepth(Color32[] pixels, Color32[] depths, int width, int height)
+        {
+            var shader = Resources.Load<Shader>("RallyBackdropGaussian");
+            Assert.That(shader, Is.Not.Null);
+            Assert.That(shader.isSupported, Is.True, "The production Gaussian shader must be supported.");
+            var source = Own(new Texture2D(width, height, TextureFormat.RGBA32, false, false));
+            source.SetPixels32(pixels);
+            source.Apply(false, true);
+            var depth = Own(new Texture2D(width, height, TextureFormat.RGBA32, false, true));
+            depth.SetPixels32(depths);
+            depth.Apply(false, true);
+            var filter = Own(new Material(shader));
+            filter.SetVector("_UvRect", new Vector4(.5f / width, .5f / height,
+                (width - .5f) / width, (height - .5f) / height));
+            filter.SetFloat("_Sigma", 3);
+            filter.SetInt("_KernelRadius", 9);
+            filter.SetTexture("_DepthTex", depth);
+            filter.SetFloat("_HasDepthTex", 1);
+            var result = Own(new RenderTexture(width, height, 0,
+                RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear));
+            Assert.That(result.Create(), Is.True);
+            RenderTexture previous = RenderTexture.active;
+            bool previousSrgbWrite = GL.sRGBWrite;
+            RenderTexture temporary = null;
+            try
+            {
+                temporary = RenderTexture.GetTemporary(width, height, 0,
+                    RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear);
+                temporary.wrapMode = TextureWrapMode.Clamp;
+                temporary.filterMode = FilterMode.Bilinear;
+                GL.sRGBWrite = false;
+                Graphics.Blit(source, temporary, filter, 0);
+                Graphics.Blit(temporary, result, filter, 1);
+                return result;
+            }
+            finally
+            {
+                RenderTexture.active = previous;
+                GL.sRGBWrite = previousSrgbWrite;
+                if (temporary != null) RenderTexture.ReleaseTemporary(temporary);
+            }
+        }
+
+        static void StripeStatistics(Color[] colors, int width, int row, out float mean, out float contrast)
+        {
+            float dark = 0, light = 0;
+            int count = (width - 64) / 2;
+            // Whole eight-pixel periods, with ample margin from crop boundaries.
+            for (int x = 32; x < width - 32; x++)
+                if (x % 8 < 4) dark += colors[row * width + x].r;
+                else light += colors[row * width + x].r;
+            mean = (light + dark) / (2 * count);
+            contrast = (light - dark) / count;
+        }
+
         RenderTexture Bake(Color32[] pixels, int width, int height, Rect crop)
         {
             var source = Own(new Texture2D(width, height, TextureFormat.RGBA32, false, false));

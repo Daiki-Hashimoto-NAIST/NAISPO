@@ -32,12 +32,16 @@ namespace Naispo.Interaction
         [Header("Optional collection replacements")]
         public Sprite collectionBackground;
         public Sprite battleBackground;
+        [Tooltip("Depth layout authored for the glasshouse painting. Choose Uniform for unrelated replacement art.")]
+        public RallyBackdropDepthProfile collectionBackgroundDepth;
+        [Tooltip("Depth layout authored for the dueling-hall painting. Choose Uniform for unrelated replacement art.")]
+        public RallyBackdropDepthProfile battleBackgroundDepth;
         [Tooltip("Vertical crop anchor for background art: 0 keeps the bottom, 1 keeps the top.")]
         [Range(0, 1)] public float backgroundVerticalAlignment = .5f;
 
         [Header("Painted background readability")]
-        [Tooltip("Gaussian sigma for the distant background in pixels at a 1280-pixel image width. Near columns, floor and upper sky stay sharp.")]
-        [Range(0, 6)] public float backgroundBlurPixels = 3.5f;
+        [Tooltip("Maximum Gaussian sigma at the farthest depth, in pixels at a 1280-pixel image width. Nearer surfaces use smaller radii.")]
+        [Range(0, 6)] public float backgroundBlurPixels = 2.4f;
         [Range(0, 1)] public float backgroundSaturation = .84f;
         [Range(.2f, 1)] public float backgroundBrightness = .8f;
         [Tooltip("Reduces bright painted highlights without dimming gameplay sprites or changing the ball light.")]

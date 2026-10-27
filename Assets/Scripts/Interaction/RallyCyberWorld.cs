@@ -103,7 +103,8 @@ namespace Naispo.Interaction
                 backdropSprite, Color.white, -90, simple: true);
             if (backdropConfigured)
             {
-                var material = Own(RallySceneryArtwork.CreateBackdropMaterial(backdropSprite, config, out var blurredTexture));
+                var material = Own(RallySceneryArtwork.CreateBackdropMaterial(backdropSprite, config,
+                    out var blurredTexture, config.battleBackgroundDepth));
                 Own(blurredTexture);
                 if (material != null) background.sharedMaterial = material;
             }
