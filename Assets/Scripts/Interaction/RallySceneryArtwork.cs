@@ -11,11 +11,13 @@ namespace Naispo.Interaction
     {
         /// <summary>
         /// Creates a material only for a validated, un-atlased painted backdrop.
-        /// The caller owns the returned material; the source image stays untouched.
+        /// The caller owns the returned material and blurred texture; the source image stays untouched.
         /// Keeping the shader in Resources also retains it in player builds.
         /// </summary>
-        public static Material CreateBackdropMaterial(Sprite sprite, RallyVisualConfig config)
+        public static Material CreateBackdropMaterial(Sprite sprite, RallyVisualConfig config,
+            out RenderTexture blurredTexture)
         {
+            blurredTexture = null;
             if (sprite == null || sprite.texture == null || sprite.packed || config == null) return null;
             var shader = Resources.Load<Shader>("RallyBackdropSoftening");
             if (shader == null || !shader.isSupported) return null;
@@ -24,18 +26,77 @@ namespace Naispo.Interaction
                 name = "Painted backdrop softening",
                 hideFlags = HideFlags.DontSave
             };
-            material.SetFloat("_BlurPixels", Mathf.Clamp(config.backgroundBlurPixels, 0, 4));
             material.SetFloat("_Saturation", Mathf.Clamp01(config.backgroundSaturation));
             material.SetFloat("_Brightness", Mathf.Clamp(config.backgroundBrightness, .2f, 1));
             material.SetFloat("_HighlightCompression", Mathf.Clamp01(config.backgroundHighlightCompression));
-            // A replacement may use only part of a larger texture. Blur taps stay
-            // inside that rect, including its half-texel border, without requiring
-            // Read/Write access or modifying the imported texture's wrap mode.
             Rect rect = sprite.rect;
             float width = sprite.texture.width, height = sprite.texture.height;
-            material.SetVector("_UvRect", new Vector4((rect.xMin + .5f) / width,
-                (rect.yMin + .5f) / height, (rect.xMax - .5f) / width, (rect.yMax - .5f) / height));
+            var uvRect = new Vector4((rect.xMin + .5f) / width,
+                (rect.yMin + .5f) / height, (rect.xMax - .5f) / width, (rect.yMax - .5f) / height);
+            material.SetVector("_UvRect", uvRect);
+            // Bake once at the source resolution. The display shader blends this
+            // with the sharp original only in the distant middle of the room.
+            float sigma = Mathf.Clamp(config.backgroundBlurPixels, 0, 6) * rect.width / 1280f;
+            blurredTexture = CreateBlurredBackdrop(sprite.texture, uvRect, sigma);
+            material.SetFloat("_HasBlurredTex", blurredTexture != null ? 1 : 0);
+            if (blurredTexture != null) material.SetTexture("_BlurredTex", blurredTexture);
             return material;
+        }
+
+        static RenderTexture CreateBlurredBackdrop(Texture2D source, Vector4 uvRect, float sigma)
+        {
+            if (sigma < .01f || !SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBHalf)) return null;
+            var shader = Resources.Load<Shader>("RallyBackdropGaussian");
+            if (shader == null || !shader.isSupported) return null;
+            RenderTexture previous = RenderTexture.active;
+            bool previousSrgbWrite = GL.sRGBWrite;
+            RenderTexture temporary = null, result = null;
+            Material filter = null;
+            bool completed = false;
+            try
+            {
+                filter = new Material(shader) { hideFlags = HideFlags.DontSave };
+                filter.SetVector("_UvRect", uvRect);
+                filter.SetFloat("_Sigma", sigma);
+                filter.SetInt("_KernelRadius", Mathf.Min(32, Mathf.CeilToInt(sigma * 3)));
+                result = new RenderTexture(source.width, source.height, 0,
+                    RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear)
+                {
+                    name = source.name + " distant room defocus",
+                    hideFlags = HideFlags.DontSave,
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Bilinear,
+                    useMipMap = false,
+                    autoGenerateMips = false
+                };
+                if (!result.Create()) return null;
+                temporary = RenderTexture.GetTemporary(source.width, source.height, 0,
+                    RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear);
+                temporary.wrapMode = TextureWrapMode.Clamp;
+                temporary.filterMode = FilterMode.Bilinear;
+                GL.sRGBWrite = false;
+                // Pass one premultiplies source alpha; pass two filters that result
+                // without multiplying again. Both passes sample every source texel.
+                Graphics.Blit(source, temporary, filter, 0);
+                Graphics.Blit(temporary, result, filter, 1);
+                completed = true;
+                return result;
+            }
+            finally
+            {
+                RenderTexture.active = previous;
+                GL.sRGBWrite = previousSrgbWrite;
+                if (temporary != null) RenderTexture.ReleaseTemporary(temporary);
+                if (filter != null)
+                {
+                    if (Application.isPlaying) Object.Destroy(filter); else Object.DestroyImmediate(filter);
+                }
+                if (!completed && result != null)
+                {
+                    result.Release();
+                    if (Application.isPlaying) Object.Destroy(result); else Object.DestroyImmediate(result);
+                }
+            }
         }
 
         public static Texture2D NewTexture(int width, int height, string textureName)

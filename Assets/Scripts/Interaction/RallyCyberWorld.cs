@@ -103,7 +103,8 @@ namespace Naispo.Interaction
                 backdropSprite, Color.white, -90, simple: true);
             if (backdropConfigured)
             {
-                var material = Own(RallySceneryArtwork.CreateBackdropMaterial(backdropSprite, config));
+                var material = Own(RallySceneryArtwork.CreateBackdropMaterial(backdropSprite, config, out var blurredTexture));
+                Own(blurredTexture);
                 if (material != null) background.sharedMaterial = material;
             }
             backdrop = background.transform;
@@ -380,6 +381,7 @@ namespace Naispo.Interaction
         static void Release(Object resource)
         {
             if (resource == null) return;
+            if (resource is RenderTexture texture) texture.Release();
             if (Application.isPlaying) Destroy(resource); else DestroyImmediate(resource);
         }
     }

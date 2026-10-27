@@ -36,9 +36,9 @@ namespace Naispo.Interaction
         [Range(0, 1)] public float backgroundVerticalAlignment = .5f;
 
         [Header("Painted background readability")]
-        [Tooltip("Background-only softening radius in screen pixels at a 1280-pixel viewport width.")]
-        [Range(0, 4)] public float backgroundBlurPixels = 2f;
-        [Range(0, 1)] public float backgroundSaturation = .72f;
+        [Tooltip("Gaussian sigma for the distant background in pixels at a 1280-pixel image width. Near columns, floor and upper sky stay sharp.")]
+        [Range(0, 6)] public float backgroundBlurPixels = 3.5f;
+        [Range(0, 1)] public float backgroundSaturation = .84f;
         [Range(.2f, 1)] public float backgroundBrightness = .8f;
         [Tooltip("Reduces bright painted highlights without dimming gameplay sprites or changing the ball light.")]
         [Range(0, 1)] public float backgroundHighlightCompression = .65f;

@@ -4,8 +4,9 @@ Shader "Naispo/PaintedBackdropSoftening"
     {
         [PerRendererData] _MainTex("Background", 2D) = "white" {}
         [HideInInspector] _Color("Tint", Color) = (1,1,1,1)
-        _BlurPixels("Blur pixels at 1280 width", Range(0,4)) = 2
-        _Saturation("Saturation", Range(0,1)) = 0.72
+        [HideInInspector] _BlurredTex("Cached distant room", 2D) = "black" {}
+        [HideInInspector] _HasBlurredTex("Cached defocus available", Float) = 0
+        _Saturation("Saturation", Range(0,1)) = 0.84
         _Brightness("Brightness", Range(0.2,1)) = 0.8
         _HighlightCompression("Highlight compression", Range(0,1)) = 0.65
         [HideInInspector] _UvRect("Source crop", Vector) = (0,0,1,1)
@@ -27,11 +28,13 @@ Shader "Naispo/PaintedBackdropSoftening"
 
             TEXTURE2D(_MainTex);
             SAMPLER(sampler_MainTex);
+            TEXTURE2D(_BlurredTex);
+            SAMPLER(sampler_BlurredTex);
 
             CBUFFER_START(UnityPerMaterial)
                 half4 _Color;
                 float4 _UvRect;
-                float _BlurPixels;
+                half _HasBlurredTex;
                 half _Saturation, _Brightness, _HighlightCompression;
             CBUFFER_END
 
@@ -64,41 +67,20 @@ Shader "Naispo/PaintedBackdropSoftening"
                 return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, clamp(uv, _UvRect.xy, _UvRect.zw));
             }
 
-            half4 WeightedBackground(float2 uv)
-            {
-                half4 sampleColor = ReadBackground(uv);
-                return half4(sampleColor.rgb * sampleColor.a, sampleColor.a);
-            }
-
             half4 Frag(Varyings input) : SV_Target
             {
-                // UV derivatives keep the softness in screen space regardless of
-                // import size or the cover crop. Resolution scaling keeps the same
-                // composition at 720p and larger window sizes.
-                float radius = _BlurPixels * (_ScreenParams.x / 1280.0);
-                float2 dx = ddx(input.uv) * (radius * 0.5);
-                float2 dy = ddy(input.uv) * (radius * 0.5);
                 half4 center = ReadBackground(input.uv);
-                // Dense 5x5 binomial weights (1,4,6,4,1) avoid separate ghost
-                // copies of tiny painted stars at larger window sizes. The center
-                // sample is reused so the full kernel still takes only 25 reads.
-                half4 blurred = half4(center.rgb * center.a, center.a) * (36.0h / 256.0h);
-                [unroll]
-                for (int y = -2; y <= 2; y++)
-                {
-                    half weightY = y == 0 ? 6.0h : (abs(y) == 1 ? 4.0h : 1.0h);
-                    [unroll]
-                    for (int x = -2; x <= 2; x++)
-                    {
-                        if (x != 0 || y != 0)
-                        {
-                            half weightX = x == 0 ? 6.0h : (abs(x) == 1 ? 4.0h : 1.0h);
-                            blurred += WeightedBackground(input.uv + dx * x + dy * y) *
-                                (weightX * weightY / 256.0h);
-                        }
-                    }
-                }
-                half3 color = blurred.rgb / max(blurred.a, 0.0001h);
+                half4 blurred = SAMPLE_TEXTURE2D(_BlurredTex, sampler_BlurredTex,
+                    clamp(input.uv, _UvRect.xy, _UvRect.zw));
+                float2 roomUv = saturate((input.uv - _UvRect.xy) / max(_UvRect.zw - _UvRect.xy, 0.00001));
+                // Suggested depth in the painted room, not a blur over the whole
+                // image: preserve the near columns, floor, upper glass and moon.
+                float sideDistance = min(roomUv.x, 1.0 - roomUv.x);
+                float depth = smoothstep(0.20, 0.39, sideDistance)
+                    * smoothstep(0.17, 0.34, roomUv.y)
+                    * (1.0 - smoothstep(0.68, 0.83, roomUv.y));
+                half3 softColor = blurred.rgb / max(blurred.a, 0.0001h);
+                half3 color = lerp(center.rgb, softColor, depth * _HasBlurredTex);
                 half luminance = dot(color, half3(0.2126h, 0.7152h, 0.0722h));
                 color = lerp(luminance.xxx, color, _Saturation);
                 // Compress only brighter painted details. Shadows keep their room
