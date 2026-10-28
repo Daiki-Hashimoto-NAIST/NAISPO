@@ -38,7 +38,7 @@ namespace Naispo.Tests
         }
 
         [UnityTest]
-        public IEnumerator RealFloorPointsCelebrateAndVictoryKeepsAnimatingAfterPlayStops()
+        public IEnumerator VictoryFinishesWhenPlayersLowerTheirHandsAndStillHonorsExplicitPause()
         {
             for(int point=1;point<=RallyVersusState.PointsToWin;point++)
             {
@@ -66,6 +66,52 @@ namespace Naispo.Tests
                 "Ending the match must stop gameplay without freezing its victory animation.");
             Assert.That(game.BattleEffects.ActiveParticleCount,Is.GreaterThan(0));
             Assert.That(ball.Body.position,Is.EqualTo(finalBallPosition));
+
+            // Real players often lower their hands immediately after the deciding
+            // point. The app continues reporting that loss during the result screen.
+            game.SetInputReady(false);
+            yield return TwoFrames();
+            Assert.That(game.InputReady,Is.False);
+            float lostTrackingAge=game.BattleEffects.EffectAge;
+            yield return new WaitForSecondsRealtime(.12f);
+            yield return TwoFrames();
+            Assert.That(game.BattleEffects.EffectAge,Is.GreaterThan(lostTrackingAge+.04f),
+                "Lowering hands after a win must not freeze its pending fireworks.");
+
+            game.SetPaused(true);
+            float pausedAge=game.BattleEffects.EffectAge;
+            float pausedWinAge=WinAge();
+            int pausedCount=game.BattleEffects.ActiveParticleCount;
+            yield return new WaitForSecondsRealtime(.15f);
+            yield return TwoFrames();
+            Assert.That(game.BattleEffects.EffectAge,Is.EqualTo(pausedAge).Within(.0001f));
+            Assert.That(WinAge(),Is.EqualTo(pausedWinAge).Within(.0001f),
+                "An explicit pause still suspends the result entrance animation.");
+            Assert.That(game.BattleEffects.ActiveParticleCount,Is.EqualTo(pausedCount));
+
+            game.SetPaused(false);
+            yield return WaitFor(() => !game.BattleEffects.IsVictory && game.BattleEffects.ActiveParticleCount==0,
+                4,"All scheduled victory bursts must finish and fade without requiring hands again.");
+            Assert.That(WinAge(),Is.GreaterThan(pausedWinAge+.5f));
+            Assert.That(game.InputReady,Is.False,"The result must not fabricate tracking readiness.");
+            Assert.That(game.VersusState.RightScore,Is.EqualTo(RallyVersusState.PointsToWin));
+            Assert.That(game.CanAdvanceBall,Is.False);
+            Assert.That(ball.Body.simulated,Is.False);
+            Assert.That(ball.Body.position,Is.EqualTo(finalBallPosition));
+
+            // A rematch restores the ordinary tracking gate before its serve.
+            game.RestartGame();
+            yield return TwoFrames();
+            Assert.That(game.BattleEffects.EffectAge,Is.Zero);
+            Assert.That(game.CanAdvanceBall,Is.False);
+            Assert.That(ball.Body.simulated,Is.False);
+        }
+
+        float WinAge()
+        {
+            var field=typeof(CooperativeCoinGame).GetField("battleWinAge",BindingFlags.Instance|BindingFlags.NonPublic);
+            Assert.That(field,Is.Not.Null);
+            return (float)field.GetValue(game);
         }
 
         [UnityTest]

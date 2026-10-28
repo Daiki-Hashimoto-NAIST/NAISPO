@@ -28,6 +28,7 @@ MonoBehaviour:
   collectionBackground: {fileID: 21300000, guid: dc4843e1bf9a40daac7c5f8fb26141da, type: 3}
   battleBackground: {fileID: 21300000, guid: 627d519013b54c0f9b55263d13de2ac9, type: 3}
   collectionBackgroundDepth: 1
+  animateGlasshouseCandles: 1
   battleBackgroundDepth: 2
   backgroundVerticalAlignment: 0.7
   backgroundBlurPixels: 2.4

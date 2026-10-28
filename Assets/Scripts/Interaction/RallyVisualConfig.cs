@@ -36,6 +36,8 @@ namespace Naispo.Interaction
         public RallyBackdropDepthProfile collectionBackgroundDepth;
         [Tooltip("Depth layout authored for the dueling-hall painting. Choose Uniform for unrelated replacement art.")]
         public RallyBackdropDepthProfile battleBackgroundDepth;
+        [Tooltip("Animate candle positions traced for MidnightGlasshouse. Disable when replacing that painting.")]
+        public bool animateGlasshouseCandles;
         [Tooltip("Vertical crop anchor for background art: 0 keeps the bottom, 1 keeps the top.")]
         [Range(0, 1)] public float backgroundVerticalAlignment = .5f;
 

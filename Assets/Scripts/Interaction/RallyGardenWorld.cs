@@ -36,6 +36,8 @@ namespace Naispo.Interaction
         Camera gardenCamera;
         Transform backdrop, veil;
         Sprite backdropSprite, veilSprite, lineSprite, glowSprite, budSprite, flowerSprite, moteSprite;
+        Material candleMaterial;
+        static readonly int CandleTime = Shader.PropertyToID("_CandleTime");
         bool backdropConfigured, visible = true, destroyed;
         float viewportHeight, viewportAspect, presentationTime, bloomElapsed, bloomProgress;
         bool roundComplete;
@@ -211,7 +213,22 @@ namespace Naispo.Interaction
                 var material = Own(RallySceneryArtwork.CreateBackdropMaterial(backdropSprite, config,
                     out var blurredTexture, config.collectionBackgroundDepth));
                 Own(blurredTexture);
-                if (material != null) background.sharedMaterial = material;
+                if (material != null)
+                {
+                    background.sharedMaterial = material;
+                    if (config.animateGlasshouseCandles &&
+                        config.collectionBackgroundDepth == RallyBackdropDepthProfile.Glasshouse)
+                    {
+                        var mask = Own(RallyCandleArtwork.CreateMotionMask(backdropSprite));
+                        if (mask != null)
+                        {
+                            material.SetTexture("_CandleMask", mask);
+                            material.SetVector("_CandleMotionScale", RallyCandleArtwork.MotionScale(backdropSprite));
+                            material.SetFloat("_CandleStrength", 1);
+                            candleMaterial = material;
+                        }
+                    }
+                }
             }
             backdrop = background.transform;
 
@@ -380,6 +397,9 @@ namespace Naispo.Interaction
 
         void ApplyVisuals()
         {
+            // Share the garden's pause-aware clock; no realtime shader clock or
+            // scene lights that could reveal stars outside the ball's light.
+            if (candleMaterial != null) candleMaterial.SetFloat(CandleTime, presentationTime);
             Color gold = config != null ? config.gardenGold : new Color(.78f, .64f, .34f);
             Color jade = config != null ? config.playerJade : new Color(.64f, .94f, .80f);
             float flicker = .86f + .14f * Mathf.Sin(presentationTime * 1.7f);

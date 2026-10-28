@@ -99,6 +99,9 @@ namespace Naispo.Interaction
         public string InputWaitDetail { get; set; } = "両手を見せてください";
         public bool WaitingToServe => serveRemaining >= 0;
         public bool CanAdvanceBall => configured && isActiveAndEnabled && inputReady && !paused && !settingsOpen && !ExternalOverlayOpen && serveRemaining<0 && clearRemaining<0 && (!IsVersus || !versus.Complete);
+        // Players can lower their hands once the match is decided. Tracking is
+        // still reported accurately, but must not replace or freeze the result.
+        bool WaitingForPlayerInput => !inputReady && !(IsVersus && versus.Complete);
         public bool RoundComplete => progress.Complete;
         public float ArenaFloor => center.y-halfHeight+0.6f;
         public float MatchFloor => ArenaFloor+1f;
@@ -664,37 +667,20 @@ namespace Naispo.Interaction
             GUI.matrix=old;
         }
 
-        static void DrawSpellIcon(Vector2 center,RallySpell spell)
+        void DrawSpellIcon(Vector2 center,RallySpell spell)
         {
-            Color color=SpellColor(spell);
-            if(spell==RallySpell.Fireball)
-            {
-                Stroke(center+new Vector2(-7,6),center+new Vector2(1,-7),2,color);
-                Stroke(center+new Vector2(7,6),center+new Vector2(-1,-7),2,color);
-                Stroke(center+new Vector2(-5,-6),center+new Vector2(5,-6),1.6f,color);
-            }
-            else if(spell==RallySpell.Timer)
-            {
-                const int segments=10;
-                Vector2 previous=center+new Vector2(0,7);
-                for(int i=1;i<=segments;i++)
-                {
-                    float angle=i*Mathf.PI*2/segments;
-                    Vector2 point=center+new Vector2(Mathf.Sin(angle),Mathf.Cos(angle))*7;
-                    Stroke(previous,point,1.4f,color);
-                    previous=point;
-                }
-                Stroke(center,center+new Vector2(0,4),1.4f,color);
-                Stroke(center,center+new Vector2(3,0),1.4f,color);
-            }
-            else
-            {
-                Stroke(center+new Vector2(0,8),center+new Vector2(0,4),1.4f,color);
-                Stroke(center+new Vector2(-5,4),center+new Vector2(-6,-5),1.4f,color);
-                Stroke(center+new Vector2(5,4),center+new Vector2(6,-5),1.4f,color);
-                Stroke(center+new Vector2(-6,-5),center+new Vector2(6,-5),1.4f,color);
-                Fill(new Rect(center.x-1.5f,center.y-1.5f,3,3),new Color(1,.88f,1));
-            }
+            Sprite icon=GetSpellArtwork(spell);
+            if(icon==null || icon.texture==null) return;
+            Rect source=icon.rect;
+            float scale=28f/Mathf.Max(source.width,source.height);
+            var destination=new Rect(center.x-source.width*scale*.5f,center.y-source.height*scale*.5f,
+                source.width*scale,source.height*scale);
+            var uv=new Rect(source.x/icon.texture.width,source.y/icon.texture.height,
+                source.width/icon.texture.width,source.height/icon.texture.height);
+            Color previous=GUI.color;
+            GUI.color=Color.white;
+            GUI.DrawTextureWithTexCoords(destination,icon.texture,uv);
+            GUI.color=previous;
         }
 
         void DrawServeCue(float scale,Vector2 offset)
@@ -770,7 +756,7 @@ namespace Naispo.Interaction
             DrawBottomControls();
 
             if(settingsOpen) DrawSettings();
-            else if(!inputReady) DrawMessage(InputWaitTitle,InputWaitDetail,new Color(.44f,.83f,.92f));
+            else if(WaitingForPlayerInput) DrawMessage(InputWaitTitle,InputWaitDetail,new Color(.44f,.83f,.92f));
             else if(paused) DrawPauseMenu();
             else if(IsVersus && versus.Complete)
             {

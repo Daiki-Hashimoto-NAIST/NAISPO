@@ -15,7 +15,7 @@ namespace Naispo.Interaction
             battleEffects.Initialize(cameraView,halfWidth,MatchFloor,center);
             battleEffects.SetVisible(IsVersus);
         }
-        bool BattleSuspended => !isActiveAndEnabled || !inputReady || paused || settingsOpen || ExternalOverlayOpen;
+        bool BattleSuspended => !isActiveAndEnabled || WaitingForPlayerInput || paused || settingsOpen || ExternalOverlayOpen;
         void SyncBattleSuspension()
         {
             if(battleEffects!=null) battleEffects.SetSuspended(BattleSuspended);

@@ -46,6 +46,8 @@ namespace Naispo.Interaction
         readonly GameObject[] ballSpellTypeRoot = new GameObject[4];
         readonly SpriteRenderer[][] ballSpellStrokes = new SpriteRenderer[4][];
         readonly SpriteRenderer[] lightWarningRing = new SpriteRenderer[20];
+        readonly Sprite[] spellArtwork = new Sprite[4];
+        readonly Texture2D[] generatedSpellTextures = new Texture2D[4];
         SpriteRenderer versusLeftFloor, versusRightFloor;
         bool pickupArmed;
         int nextPickupSide = -1;
@@ -177,62 +179,33 @@ namespace Naispo.Interaction
         GameObject BuildSpellGlyph(string name, Transform parent, RallySpell spell, out SpriteRenderer[] strokes)
         {
             var root = CreateChild(name, parent);
-            Sprite icon = CreateConfiguredSprite(visualConfig != null ? visualConfig.SpellIcon(spell) : null,
-                .52f, "Configured " + name + " icon", true);
-            if (icon != null)
-            {
-                var view = RallySceneryArtwork.AddRenderer(root.transform, "Configured icon", icon,
-                    Color.white, 10, simple: true);
-                view.transform.localPosition = Vector3.zero;
-                strokes = new[] { view };
-                return root;
-            }
-            var list = new System.Collections.Generic.List<SpriteRenderer>();
-            Color color = SpellColor(spell);
-            if (spell == RallySpell.Fireball)
-            {
-                list.Add(Stroke("Flame left", root.transform, new Vector2(-.19f, -.22f), new Vector2(-.03f, .25f), .045f, 10, color));
-                list.Add(Stroke("Flame right", root.transform, new Vector2(.19f, -.22f), new Vector2(.03f, .25f), .045f, 10, color));
-                list.Add(Stroke("Flame base", root.transform, new Vector2(-.16f, -.18f), new Vector2(.16f, -.18f), .04f, 10, color));
-                list.Add(Stroke("Flame core", root.transform, new Vector2(-.08f, -.13f), new Vector2(.02f, .12f), .035f, 10,
-                    new Color(1, .88f, .55f)));
-            }
-            else if (spell == RallySpell.Timer)
-            {
-                const int segments = 12;
-                Vector2 previous = new Vector2(.21f, 0);
-                for (int i = 1; i <= segments; i++)
-                {
-                    float angle = i * Mathf.PI * 2 / segments;
-                    Vector2 point = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * .21f;
-                    list.Add(Stroke("Clock " + i, root.transform, previous, point, .03f, 10, color));
-                    previous = point;
-                }
-                list.Add(Stroke("Clock hand", root.transform, Vector2.zero, Vector2.up * .12f, .03f, 10, color));
-                list.Add(Stroke("Clock hand", root.transform, Vector2.zero, Vector2.right * .10f, .03f, 10, color));
-            }
-            else
-            {
-                list.Add(Stroke("Lantern top", root.transform, new Vector2(0, .26f), new Vector2(0, .18f), .035f, 10, color));
-                list.Add(Stroke("Lantern left", root.transform, new Vector2(-.14f, .18f), new Vector2(-.18f, -.13f), .035f, 10, color));
-                list.Add(Stroke("Lantern right", root.transform, new Vector2(.14f, .18f), new Vector2(.18f, -.13f), .035f, 10, color));
-                list.Add(Stroke("Lantern base", root.transform, new Vector2(-.18f, -.13f), new Vector2(.18f, -.13f), .035f, 10, color));
-                list.Add(Stroke("Lantern eye left", root.transform, new Vector2(-.13f, -.02f), new Vector2(0, .08f), .03f, 10, color));
-                list.Add(Stroke("Lantern eye right", root.transform, new Vector2(.13f, -.02f), new Vector2(0, .08f), .03f, 10, color));
-                list.Add(Stroke("Lantern glow", root.transform, new Vector2(-.07f, -.04f), new Vector2(.07f, -.04f), .055f, 10,
-                    new Color(1, .88f, 1)));
-            }
-            strokes = list.ToArray();
+            Sprite icon = GetSpellArtwork(spell);
+            string rendererName = generatedSpellTextures[(int)spell] == null ? "Configured icon" : "Spell icon";
+            var view = RallySceneryArtwork.AddRenderer(root.transform, rendererName, icon,
+                Color.white, 10, simple: true);
+            view.transform.localPosition = Vector3.zero;
+            strokes = new[] { view };
             return root;
         }
 
-        static Color SpellColor(RallySpell spell)
+        Sprite GetSpellArtwork(RallySpell spell)
         {
-            if (spell == RallySpell.Fireball) return new Color(1, .63f, .20f);
-            if (spell == RallySpell.Timer) return new Color(.38f, .86f, 1);
-            if (spell == RallySpell.Light) return new Color(.77f, .47f, 1);
-            return Color.white;
+            int index = (int)spell;
+            if (index <= 0 || index >= spellArtwork.Length) return null;
+            if (spellArtwork[index] != null) return spellArtwork[index];
+            var configuredIcon = CreateConfiguredSprite(visualConfig != null ? visualConfig.SpellIcon(spell) : null,
+                .52f, "Configured " + spell + " icon", true);
+            if (configuredIcon != null) return spellArtwork[index] = configuredIcon;
+            var texture = RallySpellArtwork.Create(spell);
+            generatedSpellTextures[index] = texture;
+            var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height),
+                Vector2.one * .5f, texture.width / RallySpellArtwork.WorldSize, 0, SpriteMeshType.FullRect);
+            sprite.name = "Rally " + spell + " symbol";
+            ownedVisualWrappers.Add(sprite);
+            return spellArtwork[index] = sprite;
         }
+
+        static Color SpellColor(RallySpell spell) => RallySpellArtwork.ColorFor(spell);
 
         SpriteRenderer Stroke(string name, Transform parent, Vector2 from, Vector2 to, float thickness, int order)
             => Stroke(name, parent, from, to, thickness, order, Color.white);
@@ -483,6 +456,12 @@ namespace Naispo.Interaction
             versusLeftFloor = versusRightFloor = null;
             for (int i = 0; i < pickupVisuals.Length; i++) pickupVisuals[i] = null;
             for (int i = 0; i < lightWarningRing.Length; i++) lightWarningRing[i] = null;
+            for (int i = 1; i < generatedSpellTextures.Length; i++)
+            {
+                Release(generatedSpellTextures[i]);
+                generatedSpellTextures[i] = null;
+                spellArtwork[i] = null;
+            }
         }
     }
 }
