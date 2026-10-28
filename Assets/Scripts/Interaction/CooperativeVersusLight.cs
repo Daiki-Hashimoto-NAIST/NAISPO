@@ -75,6 +75,9 @@ namespace Naispo.Interaction
                 lightPhase = RallyLightPhase.Hidden;
                 lightPhaseRemaining = lightPendingHidden;
                 lightWarningPresented = false;
+                // One fixed-position burst marks the transition. It never follows
+                // the hidden ball or changes the warning/hidden durations.
+                if(spellBallEffects!=null) spellBallEffects.Vanish(ball.transform.position);
                 return;
             }
 

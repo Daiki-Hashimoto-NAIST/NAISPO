@@ -155,7 +155,7 @@ namespace Naispo.Interaction
             ball.Body.gravityScale=0.55f;
             ball.Body.linearDamping=0.015f;
             ball.maximumSpeed=ballSpeed*MaximumBallSpeedFactor;
-            BuildArtwork(); BuildArena(); BuildGardenPresentation(); BuildCoins(); BuildBallLight(); BuildStarHintArtwork(); BuildVersusArtwork(); BuildBattlePresentation();
+            BuildArtwork(); BuildArena(); BuildGardenPresentation(); BuildCoins(); BuildBallLight(); BuildStarHintArtwork(); BuildVersusArtwork(); BuildBattlePresentation(); BuildSpellBallPresentation();
             configured=true;
             RefreshNet(); PlaceCoins(); BeginServe(1.4f);
         }
@@ -363,6 +363,7 @@ namespace Naispo.Interaction
         {
             if(ball != null) ball.SetGameplaySimulation(CanAdvanceBall);
             SyncBattleSuspension();
+            SyncSpellBallPresentation();
         }
         public void RestartGame()
         {
@@ -464,6 +465,7 @@ namespace Naispo.Interaction
             SyncSpellSuspension();
             RefreshVersusArtwork();
             RefreshLighting();
+            AdvanceSpellBallPresentation(Time.deltaTime);
         }
 
         // A short fade inside the same radius makes the illuminated edge legible.
@@ -485,6 +487,7 @@ namespace Naispo.Interaction
             CheckLightSafetyForRendering();
             bool ballVisible=BallPresentationVisible;
             Color gold=visualConfig!=null?visualConfig.ballGold:new Color(.95f,.79f,.46f);
+            if(IsVersus && ActiveSpell!=RallySpell.None) gold=SpellColor(ActiveSpell);
             ballLight.color=new Color(gold.r,gold.g,gold.b,.014f);
             ballCorona.color=new Color(gold.r,gold.g,gold.b,IsVersus?.30f:.38f);
             ballLight.transform.position=ball.transform.position;
@@ -502,6 +505,7 @@ namespace Naispo.Interaction
             }
             float coreAlpha=serveRemaining>=0 ? .75f+.25f*Mathf.Pow(Mathf.Sin(animationTime*5),2) : 1;
             Color ivory=visualConfig!=null?visualConfig.ballIvory:new Color(1,.995f,.96f);
+            ivory=SpellBallTint(ivory);
             ivory.a=coreAlpha;
             ballView.color=ivory;
             // Presentation only: the ball, its light, and attached spell artwork vanish
@@ -509,6 +513,7 @@ namespace Naispo.Interaction
             ballView.enabled=ballVisible;
             if(ballSpellRoot!=null) ballSpellRoot.SetActive(ballVisible && IsVersus && ActiveSpell!=RallySpell.None);
             if(lightPhase==RallyLightPhase.Warning && ballVisible && ballView.enabled) lightWarningPresented=true;
+            SyncSpellBallPresentation();
             RefreshStarHint();
         }
 

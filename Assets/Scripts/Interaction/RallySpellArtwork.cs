@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace Naispo.Interaction
 {
-    /// <summary>Small, bold spell silhouettes shared by pickups, the ball and the HUD.</summary>
+    /// <summary>Small, bold spell symbols shared by pickups and the HUD.</summary>
     public static class RallySpellArtwork
     {
         public const float WorldSize = .62f;
@@ -25,8 +25,7 @@ namespace Naispo.Interaction
             if (spell == RallySpell.None || (int)spell < 0 || (int)spell > 3)
                 throw new System.ArgumentOutOfRangeException(nameof(spell));
             if (size < 32) throw new System.ArgumentOutOfRangeException(nameof(size));
-            Vector2[] flame = spell == RallySpell.Fireball ? FlameShape(false) : null;
-            Vector2[] core = spell == RallySpell.Fireball ? FlameShape(true) : null;
+            Vector2[] flame = spell == RallySpell.Fireball ? FlameShape() : null;
             var pixels = new Color32[size * size];
             Color ink = ColorFor(spell);
             for (int y = 0; y < size; y++)
@@ -37,9 +36,11 @@ namespace Naispo.Interaction
                     if (spell == RallySpell.Fireball)
                     {
                         float distance = PolygonDistance(point, flame);
-                        Paint(ref color, Keyline, distance - .021f, size);
-                        Paint(ref color, ink, distance, size);
-                        Paint(ref color, Ivory, PolygonDistance(point, core), size);
+                        // Keep the same curved silhouette, with a .06-wide orange
+                        // rim and a transparent center like the other line symbols.
+                        float rim = Mathf.Abs(distance + .03f) - .03f;
+                        Paint(ref color, Keyline, rim - .021f, size);
+                        Paint(ref color, ink, rim, size);
                     }
                     else if (spell == RallySpell.Timer)
                         PaintClock(ref color, point, ink, size);
@@ -122,27 +123,17 @@ namespace Naispo.Interaction
             return Mathf.Sqrt(minimum) * (inside ? -1 : 1);
         }
 
-        static Vector2[] FlameShape(bool inner)
+        static Vector2[] FlameShape()
         {
             var points = new List<Vector2>();
-            if (inner)
-            {
-                points.Add(new Vector2(.025f, .10f));
-                Curve(points, new Vector2(.025f, -.03f), new Vector2(.17f, -.10f), new Vector2(.13f, -.25f));
-                Curve(points, new Vector2(.10f, -.37f), new Vector2(-.11f, -.37f), new Vector2(-.13f, -.24f));
-                Curve(points, new Vector2(-.16f, -.12f), new Vector2(-.04f, -.08f), new Vector2(.025f, .10f));
-            }
-            else
-            {
-                points.Add(new Vector2(.09f, .44f));
-                Curve(points, new Vector2(.02f, .24f), new Vector2(.26f, .22f), new Vector2(.25f, -.01f));
-                Curve(points, new Vector2(.31f, .02f), new Vector2(.33f, .10f), new Vector2(.32f, .15f));
-                Curve(points, new Vector2(.49f, -.10f), new Vector2(.32f, -.41f), new Vector2(.03f, -.43f));
-                Curve(points, new Vector2(-.25f, -.46f), new Vector2(-.43f, -.25f), new Vector2(-.31f, -.03f));
-                Curve(points, new Vector2(-.28f, .03f), new Vector2(-.22f, .10f), new Vector2(-.23f, .20f));
-                Curve(points, new Vector2(-.17f, .15f), new Vector2(-.11f, .08f), new Vector2(-.12f, -.01f));
-                Curve(points, new Vector2(-.02f, .13f), new Vector2(-.08f, .27f), new Vector2(.09f, .44f));
-            }
+            points.Add(new Vector2(.09f, .44f));
+            Curve(points, new Vector2(.02f, .24f), new Vector2(.26f, .22f), new Vector2(.25f, -.01f));
+            Curve(points, new Vector2(.31f, .02f), new Vector2(.33f, .10f), new Vector2(.32f, .15f));
+            Curve(points, new Vector2(.49f, -.10f), new Vector2(.32f, -.41f), new Vector2(.03f, -.43f));
+            Curve(points, new Vector2(-.25f, -.46f), new Vector2(-.43f, -.25f), new Vector2(-.31f, -.03f));
+            Curve(points, new Vector2(-.28f, .03f), new Vector2(-.22f, .10f), new Vector2(-.23f, .20f));
+            Curve(points, new Vector2(-.17f, .15f), new Vector2(-.11f, .08f), new Vector2(-.12f, -.01f));
+            Curve(points, new Vector2(-.02f, .13f), new Vector2(-.08f, .27f), new Vector2(.09f, .44f));
             return points.ToArray();
         }
 

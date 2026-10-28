@@ -226,6 +226,7 @@ namespace Naispo.Interaction
 
         void ResetVersusRally()
         {
+            if(spellBallEffects!=null) spellBallEffects.ResetEffects();
             if (IsVersus) versus.BeginRally();
             ClearPickupSlots();
             // A point ends the pickup cycle. A spawn delay left over from the previous
@@ -426,7 +427,11 @@ namespace Naispo.Interaction
             for (int type = 1; type < ballSpellTypeRoot.Length; type++)
             {
                 bool active = (int)versus.ActiveSpell == type;
-                if (ballSpellTypeRoot[type] != null) ballSpellTypeRoot[type].SetActive(active);
+                // The ball itself now carries the spell through tint and motion.
+                // Keep an explicitly supplied attached icon, but avoid stamping the
+                // generated pickup symbol over the core and its living effects.
+                if (ballSpellTypeRoot[type] != null)
+                    ballSpellTypeRoot[type].SetActive(active && generatedSpellTextures[type] == null);
             }
             bool warning = versus.ActiveSpell == RallySpell.Light && LightPhase == RallyLightPhase.Warning;
             for (int i = 0; i < lightWarningRing.Length; i++)
