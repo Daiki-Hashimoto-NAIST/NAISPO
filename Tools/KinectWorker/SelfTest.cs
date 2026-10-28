@@ -11,8 +11,64 @@ static class SelfTest
         if(selector.Choose(ids,xs,zs,conf,2,0,c)!=1)throw new Exception("Selection failed");xs[0]=0;
         if(selector.Choose(ids,xs,zs,conf,2,.1,c)!=1)throw new Exception("Sticky ID failed");conf[1]=0;
         if(selector.Choose(ids,xs,zs,conf,2,.2,c)!=-1||selector.Choose(ids,xs,zs,conf,2,2,c)!=0)throw new Exception("Loss timeout failed");
+        BodySelectionHysteresis();
+        BodySelectionReservation();
+        BodySelectionEntryRegion();
         TrackerFallback();
-        Console.WriteLine("PASS: binary roundtrip, central selection, sticky identity, loss timeout, tracker startup/fallback/cancellation");return 0;
+        Console.WriteLine("PASS: binary roundtrip, central selection, sticky identity, selection hysteresis/entry region/reacquisition, loss timeout, tracker startup/fallback/cancellation");return 0;
+    }
+
+    static void BodySelectionHysteresis()
+    {
+        var config=new WorkerConfig();var selector=new BodySelector();
+        var ids=new uint[]{1,2};var xs=new float[]{0,.1f};var zs=new float[]{3,3};var confidence=new int[]{2,2};
+        if(selector.Choose(ids,xs,zs,confidence,2,0,config)!=0)throw new Exception("Hysteresis setup failed");
+        xs[0]=1.4f;
+        if(selector.Choose(ids,xs,zs,confidence,2,.1,config)!=0)throw new Exception("Selected body must remain tracked in right retention margin");
+        xs[0]=-1.4f;
+        if(selector.Choose(ids,xs,zs,confidence,2,.2,config)!=0)throw new Exception("Selected body must remain tracked in left retention margin");
+        xs[0]=0;zs[0]=.35f;
+        if(selector.Choose(ids,xs,zs,confidence,2,.3,config)!=0)throw new Exception("Selected body must remain tracked in near retention margin");
+        zs[0]=4.65f;
+        if(selector.Choose(ids,xs,zs,confidence,2,.4,config)!=0)throw new Exception("Selected body must remain tracked in far retention margin");
+        zs[0]=.25f;
+        if(selector.Choose(ids,xs,zs,confidence,2,.5,config)!=-1)throw new Exception("Body beyond near retention limit must be invalid immediately");
+        zs[0]=4.75f;
+        if(selector.Choose(ids,xs,zs,confidence,2,.6,config)!=-1)throw new Exception("Body beyond far retention limit must be invalid immediately");
+        zs[0]=3;xs[0]=1.51f;
+        if(selector.Choose(ids,xs,zs,confidence,2,.7,config)!=-1)throw new Exception("Body beyond horizontal retention limit must be invalid immediately");
+        xs[0]=-1.51f;
+        if(selector.Choose(ids,xs,zs,confidence,2,.8,config)!=-1)throw new Exception("Left retention limit must match the right limit");
+    }
+
+    static void BodySelectionReservation()
+    {
+        var config=new WorkerConfig();var selector=new BodySelector();
+        var ids=new uint[]{1,2};var xs=new float[]{0,.1f};var zs=new float[]{3,3};var confidence=new int[]{2,2};
+        if(selector.Choose(ids,xs,zs,confidence,2,0,config)!=0)throw new Exception("Reservation setup failed");
+        xs[0]=1.6f;
+        if(selector.Choose(ids,xs,zs,confidence,2,.1,config)!=-1)throw new Exception("An eligible newcomer must not replace a reserved identity");
+        xs[0]=1.4f;
+        if(selector.Choose(ids,xs,zs,confidence,2,.2,config)!=0)throw new Exception("Same identity must reacquire inside the retention-only margin after a brief exit");
+        confidence[0]=0;
+        if(selector.Choose(ids,xs,zs,confidence,2,.3,config)!=-1)throw new Exception("Retention margin must not bypass confidence");
+        if(selector.Choose(ids,xs,zs,confidence,2,1.3,config)!=1)throw new Exception("Expired reservation must allow a newcomer in the entry region");
+    }
+
+    static void BodySelectionEntryRegion()
+    {
+        var config=new WorkerConfig();var selector=new BodySelector();
+        var ids=new uint[]{1,2,3,4};var xs=new float[]{1.4f,-1.4f,0,0};var zs=new float[]{3,3,.35f,4.65f};var confidence=new int[]{2,2,2,2};
+        if(selector.Choose(ids,xs,zs,confidence,4,0,config)!=-1)throw new Exception("Retention-only margin must not admit new identities");
+        xs[0]=1;
+        if(selector.Choose(ids,xs,zs,confidence,4,.1,config)!=0)throw new Exception("New identity must still enter inside the original region");
+        xs[0]=1.6f;
+        if(selector.Choose(ids,xs,zs,confidence,4,2,config)!=-1)throw new Exception("Reservation expiry must not widen newcomer entry region");
+
+        config.MinDistance=.1f;selector=new BodySelector();xs[0]=0;zs[0]=.1f;
+        if(selector.Choose(ids,xs,zs,confidence,1,0,config)!=0)throw new Exception("Near-camera setup failed");
+        zs[0]=-.01f;
+        if(selector.Choose(ids,xs,zs,confidence,1,.1,config)!=-1)throw new Exception("Depth retention must not extend behind the camera");
     }
 
     static void TrackerFallback()

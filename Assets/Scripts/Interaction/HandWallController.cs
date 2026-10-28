@@ -28,6 +28,9 @@ namespace Naispo.Interaction
         KinectViewportMapper lastMapper;
         int lastGeneration=-1,lastMapRevision=-1;
         bool stabilizeTracking;
+        bool courtConfigured;
+        CooperativeCoinGame courtGame;
+        float courtCenterX,courtHalfWidth;
         [Min(0)] public float trackingGraceSeconds=.25f;
         [Min(0)] public float recoverySeconds=.20f;
         public bool StabilizeTracking
@@ -35,10 +38,25 @@ namespace Naispo.Interaction
             get=>stabilizeTracking;
             set { if(stabilizeTracking==value)return;stabilizeTracking=value;ResetTracking(); }
         }
-        public bool HasUsableWall => isActiveAndEnabled&&active[0]&&walls[0]!=null&&walls[0].enabled;
+        public bool TrackingReady => isActiveAndEnabled&&active[0];
+        public bool HasUsableWall => TrackingReady&&walls[0]!=null&&walls[0].enabled;
         public bool HoldingLastPose => stabilizeTracking&&stabilized[0].Holding;
         public bool AcquiringHands => stabilizeTracking&&stabilized[0].Acquiring;
         public EdgeCollider2D Wall(int slot) => walls[slot];
+
+        public void ConfigureCourt(CooperativeCoinGame game,int side,float centerX,float halfWidth)
+        {
+            courtConfigured=true;courtGame=game;PlayerSide=side;
+            courtCenterX=centerX;courtHalfWidth=halfWidth;
+            for(int i=0;i<barriers.Length;i++)
+            {
+                if(barriers[i]==null)continue;
+                barriers[i].ConfigureCourt(game,side,centerX,halfWidth);
+                CourtEdgeFade.Configure(materials[i],centerX,halfWidth,side);
+                var glow=barriers[i].GetComponent<RallyBarrierGlow>();
+                if(glow!=null)glow.ConfigureCourt(centerX,halfWidth,side);
+            }
+        }
 
         public void SetPresentation(Color color,bool garden)
         {
@@ -53,7 +71,11 @@ namespace Naispo.Interaction
                 lines[i].numCornerVertices=4;
                 var glow=walls[i].GetComponent<RallyBarrierGlow>();
                 if(glow==null)glow=walls[i].gameObject.AddComponent<RallyBarrierGlow>();
-                if(glow!=null)glow.Configure(lines[i],garden);
+                if(glow!=null)
+                {
+                    glow.Configure(lines[i],garden);
+                    if(courtConfigured)glow.ConfigureCourt(courtCenterX,courtHalfWidth,PlayerSide);
+                }
             }
         }
 
@@ -92,6 +114,7 @@ namespace Naispo.Interaction
                 barriers[i].PlayerSide=PlayerSide;
                 barriers[i].Initialize(walls[i], lines[i]);
             }
+            if(courtConfigured)ConfigureCourt(courtGame,PlayerSide,courtCenterX,courtHalfWidth);
             if(presentationSet)SetPresentation(presentationColor,gardenPresentation);
         }
 
@@ -131,6 +154,7 @@ namespace Naispo.Interaction
                     ClearMotion(slot);
                     walls[slot].attachedRigidbody.linearVelocity=Vector2.zero;
                     walls[slot].attachedRigidbody.angularVelocity=0;
+                    barriers[slot].SetPoseTarget(walls[slot].attachedRigidbody.position,walls[slot].attachedRigidbody.rotation);
                     continue;
                 }
                 bool reset=ApplyPose(slot,filtered.Left,filtered.Right,filtered.SeparationMeters,filtered.Owner);
@@ -210,8 +234,10 @@ namespace Naispo.Interaction
             if(reset) { body.position=center;body.rotation=angle; }
             else { body.MovePosition(center);body.MoveRotation(angle); }
             owners[slot]=owner;active[slot]=true;
+            barriers[slot].SetTracking(true);
+            barriers[slot].SetPoseTarget(center,angle);
             barriers[slot].SetSpan(delta.magnitude,meters,thickness,reset);
-            walls[slot].enabled=true;
+            if(!courtConfigured)walls[slot].enabled=true;
             lines[slot].startWidth=lines[slot].endWidth=thickness*(presentationSet ? (gardenPresentation ? .55f : .40f) : 1);
             lines[slot].enabled=true;
             return reset;
@@ -221,6 +247,7 @@ namespace Naispo.Interaction
             active[i] = false;
             ClearMotion(i);
             if (walls[i] == null) return;
+            barriers[i].SetTracking(false);
             walls[i].enabled = lines[i].enabled = false;
             barriers[i].ResetSpring();
             walls[i].attachedRigidbody.linearVelocity = Vector2.zero;

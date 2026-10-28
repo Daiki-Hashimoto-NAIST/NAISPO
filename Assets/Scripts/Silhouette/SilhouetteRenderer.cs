@@ -25,6 +25,9 @@ namespace Naispo.Silhouette
         Color outlineColor;
         float outlineWidth;
         bool outlineConfigured;
+        bool courtFadeConfigured;
+        float fadeCenterX, fadeHalfWidth;
+        int fadeSide;
         static readonly int OutlineColorId=Shader.PropertyToID("_OutlineColor");
         static readonly int OutlineWidthId=Shader.PropertyToID("_OutlineWidth");
         static readonly ProfilerMarker UploadMarker=new ProfilerMarker("Naispo.Silhouette.TextureUpload");
@@ -40,6 +43,7 @@ namespace Naispo.Silhouette
             material = new Material(silhouetteMaterial);
             if(settings != null && settings.ballLightShader != null) material.shader = settings.ballLightShader;
             ApplyOutline();
+            ApplyCourtFade();
             view = GetComponent<MeshRenderer>();
             view.sharedMaterial = material;
             view.sortingOrder = 0;
@@ -61,6 +65,18 @@ namespace Naispo.Silhouette
             if(!outlineConfigured || material==null || !material.HasProperty(OutlineWidthId))return;
             material.SetColor(OutlineColorId,outlineColor);
             material.SetFloat(OutlineWidthId,outlineWidth);
+        }
+
+        public void SetCourtFade(float centerX,float halfWidth,int side)
+        {
+            courtFadeConfigured=true;
+            fadeCenterX=centerX;fadeHalfWidth=halfWidth;fadeSide=side;
+            ApplyCourtFade();
+        }
+
+        void ApplyCourtFade()
+        {
+            if(courtFadeConfigured) CourtEdgeFade.Configure(material,fadeCenterX,fadeHalfWidth,fadeSide);
         }
 
         void Start()

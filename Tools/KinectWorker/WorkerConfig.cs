@@ -32,13 +32,21 @@ public sealed class WorkerConfig
 
 public sealed class BodySelector
 {
+    const float HorizontalRetentionMargin=0.30f;
+    const float DepthRetentionMargin=0.20f;
     uint? selected; double lastSeen;
     public int Choose(uint[] ids,float[] xs,float[] zs,int[] confidence,int count,double now,WorkerConfig config)
     {
         bool Eligible(int i)=>confidence[i]>=config.MinimumConfidence&&Math.Abs(xs[i])<=config.MaxAbsX&&zs[i]>=config.MinDistance&&zs[i]<=config.MaxDistance;
+        // Only the current identity gets room to reach beyond the entry region.
+        // A missed frame still returns no body; LostTimeout reserves identity, not a stale pose.
+        bool Retainable(int i)=>confidence[i]>=config.MinimumConfidence
+            &&Math.Abs(xs[i])<=config.MaxAbsX+HorizontalRetentionMargin
+            &&zs[i]>=Math.Max(0,config.MinDistance-DepthRetentionMargin)
+            &&zs[i]<=config.MaxDistance+DepthRetentionMargin;
         if(selected.HasValue)
         {
-            for(int i=0;i<count;i++)if(ids[i]==selected.Value&&Eligible(i)){lastSeen=now;return i;}
+            for(int i=0;i<count;i++)if(ids[i]==selected.Value&&Retainable(i)){lastSeen=now;return i;}
             if(now-lastSeen<config.LostTimeout)return -1;
             selected=null;
         }

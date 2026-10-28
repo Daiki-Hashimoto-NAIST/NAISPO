@@ -1,4 +1,5 @@
 using UnityEngine;
+using Naispo.Silhouette;
 
 namespace Naispo.Interaction
 {
@@ -11,13 +12,18 @@ namespace Naispo.Interaction
         Sprite orbSprite;
         Texture2D orbTexture;
         readonly SpriteRenderer[] ends=new SpriteRenderer[2];
+        readonly MaterialPropertyBlock[] endProperties=new MaterialPropertyBlock[2];
         bool visible;
 
         public void Configure(LineRenderer line,bool garden)
         {
             source=line;visible=true;
             if(material!=null) { ApplyTheme(garden);return; }
-            material=new Material(Shader.Find("Sprites/Default"));
+            // Reuse the scene-referenced silhouette shader so the world-space
+            // mask is included in player builds and shared by every glow layer.
+            material=new Material(line.sharedMaterial.shader);
+            material.mainTexture=Texture2D.whiteTexture;
+            material.SetFloat("_UseVertexColor",1);
             outer=Layer("Soft ribbon halo",.25f,8);
             inner=Layer("Ribbon light",.16f,9);
             orbTexture=new Texture2D(64,64,TextureFormat.RGBA32,false) { wrapMode=TextureWrapMode.Clamp };
@@ -32,9 +38,17 @@ namespace Naispo.Interaction
             {
                 var child=new GameObject("Hand light "+i);child.transform.SetParent(transform,false);
                 ends[i]=child.AddComponent<SpriteRenderer>();ends[i].sprite=orbSprite;
+                ends[i].sharedMaterial=material;
+                endProperties[i]=new MaterialPropertyBlock();
+                endProperties[i].SetTexture("_MainTex",orbTexture);
+                endProperties[i].SetFloat("_UseVertexColor",0);
                 ends[i].sortingOrder=11;child.transform.localScale=Vector3.one*.42f;
             }
             ApplyTheme(garden);
+        }
+        public void ConfigureCourt(float centerX,float halfWidth,int side)
+        {
+            CourtEdgeFade.Configure(material,centerX,halfWidth,side);
         }
         void ApplyTheme(bool garden)
         {
@@ -70,7 +84,11 @@ namespace Naispo.Interaction
             for(int i=0;i<2;i++)
             {
                 ends[i].transform.localPosition=source.GetPosition(i==0?0:source.positionCount-1);
-                ends[i].color=new Color(color.r,color.g,color.b,.72f);
+                // Explicit per-sprite tint avoids depending on the render pipeline's
+                // sprite instancing color path; line colors still use vertex tint.
+                ends[i].color=Color.white;
+                endProperties[i].SetColor("_TintColor",new Color(color.r,color.g,color.b,.72f));
+                ends[i].SetPropertyBlock(endProperties[i]);
             }
         }
         void OnDestroy()

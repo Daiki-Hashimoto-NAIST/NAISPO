@@ -103,6 +103,8 @@ namespace Naispo.Interaction
         public float ArenaFloor => center.y-halfHeight+0.6f;
         public float MatchFloor => ArenaFloor+1f;
         public float HalfWidth => halfWidth;
+        public Vector2 CourtCenter => center;
+        public AirHockeyBall Ball => ball;
         public BoxCollider2D NetCollider => net;
         public bool BallLightEnabled
         {

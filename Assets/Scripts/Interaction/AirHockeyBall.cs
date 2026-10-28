@@ -63,6 +63,18 @@ namespace Naispo.Interaction
             Body.linearVelocity=Vector2.ClampMagnitude(rebound,maximumSpeed);
             SetGameplaySimulation(gameplaySimulation && (CooperativeGame==null || CooperativeGame.CanAdvanceBall));
         }
+        // A court restriction can invalidate an otherwise valid hold while the
+        // barrier moves. Detach without a reflected return, boost, spell use, or
+        // release notification; restore the pre-contact motion instead.
+        public void AbortCourtImpact(ElasticBarrier owner,Vector2 incoming)
+        {
+            if(impactOwner!=owner) return;
+            impactOwner=null;
+            previousImpact=owner; impactCooldown=Time.fixedTime+.12f;
+            Body.interpolation=freeInterpolation;
+            Body.linearVelocity=Vector2.ClampMagnitude(incoming,maximumSpeed);
+            SetGameplaySimulation(gameplaySimulation && (CooperativeGame==null || CooperativeGame.CanAdvanceBall));
+        }
         public void CancelBarrierImpact()
         {
             if(impactOwner!=null) impactOwner.CancelImpact(false);

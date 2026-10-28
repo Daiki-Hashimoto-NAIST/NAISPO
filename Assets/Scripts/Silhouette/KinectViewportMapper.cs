@@ -16,18 +16,64 @@ namespace Naispo.Silhouette
         public Vector2 Center { get; private set; }
         public Vector2 ViewSize { get; private set; }
         public int Revision { get; private set; }
+        // Opt-in dual-camera calibration. Legacy mappers keep the aspect fit untouched.
+        public bool DualCourt { get; private set; }
+        public int CourtSide { get; private set; }
+        public float CourtCenterX { get; private set; }
+        public float CourtHalfWidth { get; private set; }
+        public float ImageCoverage { get; private set; } = .85f;
+        public float BottomAnchor { get; private set; } = .04f;
         bool mirrored;
+
+        /// <summary>
+        /// Maps the central image band onto one player's half of a shared court.
+        /// The image remains uniform and invertible; its outer 7.5% lies beyond
+        /// the visible court on each side. Opt-in only.
+        /// </summary>
+        public void ConfigureDualCourt(bool enabled,int side,float centerX,float halfWidth,
+            float coverage=.85f,float bottomAnchor=.04f)
+        {
+            side=Mathf.Clamp(side,-1,1);
+            coverage=Mathf.Clamp(coverage,.5f,1f);
+            bottomAnchor=Mathf.Clamp01(bottomAnchor);
+            halfWidth=Mathf.Max(0f,halfWidth);
+            if(DualCourt==enabled && CourtSide==side && Mathf.Approximately(CourtCenterX,centerX) &&
+                Mathf.Approximately(CourtHalfWidth,halfWidth) && Mathf.Approximately(ImageCoverage,coverage) &&
+                Mathf.Approximately(BottomAnchor,bottomAnchor)) return;
+            DualCourt=enabled;CourtSide=side;CourtCenterX=centerX;CourtHalfWidth=halfWidth;
+            ImageCoverage=coverage;BottomAnchor=bottomAnchor;
+            // Invalidate calibration even if there is no camera or the resulting
+            // geometry happens to match the previous mode exactly.
+            if(!Refresh(Width,Height)) Revision++;
+        }
 
         public bool Refresh(int width, int height)
         {
             if (targetCamera == null || !targetCamera.orthographic || width <= 0 || height <= 0) return false;
             var size = new Vector2(2 * targetCamera.orthographicSize * targetCamera.aspect, 2 * targetCamera.orthographicSize);
             var center = (Vector2)targetCamera.transform.position;
-            center += new Vector2((viewport.center.x-.5f)*size.x,(viewport.center.y-.5f)*size.y);
-            size = Vector2.Scale(size,viewport.size);
             bool mirror = settings != null && settings.mirrorX;
-            float scale = Mathf.Min(size.x / width, size.y / height);
-            if (Width == width && Height == height && ViewSize == size && Center == center && mirrored == mirror && Mathf.Approximately(UnitsPerPixel, scale)) return false;
+            float scale;
+            if (DualCourt && CourtSide != 0 && CourtHalfWidth > 0)
+            {
+                // Anchor the image bottom on the viewport's existing .04 screen band and
+                // derive the vertical centre from the new uniform scale. No height-based
+                // minimum is applied afterwards.
+                float bottom = center.y + (BottomAnchor - .5f) * size.y;
+                scale = CourtHalfWidth / (ImageCoverage * width);
+                float imageHeight = scale * height;
+                center = new Vector2(CourtCenterX + CourtSide * CourtHalfWidth * .5f, bottom + imageHeight * .5f);
+                size = new Vector2(scale * width, imageHeight);
+            }
+            else
+            {
+                center += new Vector2((viewport.center.x-.5f)*size.x,(viewport.center.y-.5f)*size.y);
+                size = Vector2.Scale(size,viewport.size);
+                scale = Mathf.Min(size.x / width, size.y / height);
+            }
+            if (Width == width && Height == height && ViewSize == size && Center == center && mirrored == mirror &&
+                Mathf.Approximately(UnitsPerPixel, scale))
+                return false;
             Width = width; Height = height; ViewSize = size; Center = center; mirrored = mirror; UnitsPerPixel = scale;
             Revision++;
             return true;

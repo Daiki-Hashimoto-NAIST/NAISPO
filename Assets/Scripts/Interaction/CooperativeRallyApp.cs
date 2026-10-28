@@ -76,6 +76,14 @@ namespace Naispo.Interaction
             // initial art already uses the user's optional replacements.
             Game.VisualConfig=visualConfig;
             Game.Configure(ball,gameCamera,japaneseFont,visualConfig);
+            for(int slot=0;slot<2;slot++)
+            {
+                int side=slot==0 ? -1 : 1;
+                Players[slot].mapper.ConfigureDualCourt(true,side,Game.CourtCenter.x,Game.HalfWidth);
+                Players[slot].silhouetteRenderer.SetCourtFade(Game.CourtCenter.x,Game.HalfWidth,side);
+                handWalls[slot].trackingGraceSeconds=.4f;
+                handWalls[slot].ConfigureCourt(Game,side,Game.CourtCenter.x,Game.HalfWidth);
+            }
         }
 
         void BuildPlayer(int slot)
@@ -192,7 +200,7 @@ namespace Naispo.Interaction
         bool Ready(int slot)
         {
             var manager=Players[slot];
-            if(SensorMode)return manager!=null&&manager.isActiveAndEnabled&&handWalls[slot]!=null&&handWalls[slot].HasUsableWall;
+            if(SensorMode)return manager!=null&&manager.isActiveAndEnabled&&handWalls[slot]!=null&&handWalls[slot].TrackingReady;
             if(manager==null||!manager.IsFresh)return false;
             var frame=manager.CurrentFrame;
             return frame!=null&&frame.BodyCount>0&&
