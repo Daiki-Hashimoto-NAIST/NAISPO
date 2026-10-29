@@ -17,6 +17,7 @@ Shader "Naispo/PaintedBackdropSoftening"
         [HideInInspector] _AmbientExposure("Room ambient exposure", Float) = 1
         [HideInInspector] _EmissionMask("Painted candle light", 2D) = "black" {}
         [HideInInspector] _EmissionExposure("Candle exposure", Float) = 1.35
+        [HideInInspector] _FlowerLightCount("Bloomed flower lights", Integer) = 0
     }
     SubShader
     {
@@ -51,6 +52,9 @@ Shader "Naispo/PaintedBackdropSoftening"
                 float _CandleTime;
                 half _CandleStrength;
                 half _AmbientExposure, _EmissionExposure;
+                int _FlowerLightCount;
+                float4 _FlowerLights[9];
+                float4 _FlowerLightColors[9];
             CBUFFER_END
 
             struct Attributes
@@ -61,6 +65,7 @@ Shader "Naispo/PaintedBackdropSoftening"
             struct Varyings
             {
                 COMMON_2D_OUTPUTS
+                float2 flowerWorldPosition : TEXCOORD1;
                 half4 color : COLOR;
             };
 
@@ -72,6 +77,7 @@ Shader "Naispo/PaintedBackdropSoftening"
                 SetUpSpriteInstanceProperties();
                 input.positionOS = UnityFlipSprite(input.positionOS, unity_SpriteProps.xy);
                 output.positionCS = TransformObjectToHClip(input.positionOS);
+                output.flowerWorldPosition = TransformObjectToWorld(input.positionOS).xy;
                 output.uv = input.uv;
                 output.color = input.color * _Color * unity_SpriteColor;
                 return output;
@@ -80,6 +86,29 @@ Shader "Naispo/PaintedBackdropSoftening"
             half4 ReadBackground(float2 uv)
             {
                 return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, clamp(uv, _UvRect.xy, _UvRect.zw));
+            }
+
+            half3 ReadFlowerLighting(float2 worldPosition)
+            {
+                float3 light = 0;
+                float totalStrength = 0;
+                [unroll]
+                for (int i = 0; i < 9; ++i)
+                {
+                    if (i < _FlowerLightCount)
+                    {
+                        float4 source = _FlowerLights[i];
+                        float2 offset = (worldPosition - source.xy) / max(source.z, .001);
+                        // The cubic reaches zero with a flat slope at the edge.
+                        // It has no visible ring and cannot light the rest of the room.
+                        float falloff = saturate(1 - dot(offset, offset));
+                        float strength = falloff * falloff * falloff * max(0, source.w);
+                        light += max(0, _FlowerLightColors[i].rgb) * strength;
+                        totalStrength += strength;
+                    }
+                }
+                // Preserve the mixed tint while limiting overlapping flower lights.
+                return light / max(1, totalStrength);
             }
 
             half4 Frag(Varyings input) : SV_Target
@@ -117,7 +146,11 @@ Shader "Naispo/PaintedBackdropSoftening"
                 half2 emission = SAMPLE_TEXTURE2D(_EmissionMask, sampler_EmissionMask,
                     clamp(uv, _UvRect.xy, _UvRect.zw)).rg;
                 half localLight = saturate(emission.r + emission.g * .38h * (1 - emission.r));
-                color *= lerp(_AmbientExposure, _EmissionExposure, localLight);
+                // Illuminate the painted surfaces themselves, preserving their
+                // texture and shadows instead of laying a translucent glow over them.
+                half3 exposure = lerp(_AmbientExposure, _EmissionExposure, localLight).xxx;
+                exposure += ReadFlowerLighting(input.flowerWorldPosition);
+                color *= exposure;
                 // Preserve the source alpha instead of spreading its silhouette.
                 return half4(color * input.color.rgb, center.a * input.color.a);
             }

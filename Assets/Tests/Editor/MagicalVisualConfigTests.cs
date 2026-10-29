@@ -199,6 +199,8 @@ namespace Naispo.Tests
             garden.StepPresentation(1.1f, false);
             Assert.That(garden.TargetsReady, Is.True);
             Assert.That(garden.GetComponentsInChildren<Collider2D>(true), Is.Empty);
+            var initialRenderers = garden.GetComponentsInChildren<Renderer>(true);
+            int initialOwnedResources = garden.OwnedResourceCount;
             for (int index = 0; index < RallyGardenWorld.BudCount; index++)
             {
                 Vector2 target = court.Game.CollectionTargetPosition(index);
@@ -213,6 +215,11 @@ namespace Naispo.Tests
             for (int index = 0; index < RallyGardenWorld.BudCount; index++)
                 Assert.That(Vector2.Distance(garden.FlowerRenderer(index).bounds.center,
                     court.Game.CollectionTargetPosition(index)), Is.LessThan(.001f));
+            for (int frame = 0; frame < 120; frame++) garden.StepPresentation(.5f, false);
+            CollectionAssert.AreEquivalent(initialRenderers, garden.GetComponentsInChildren<Renderer>(true),
+                "A minute of flower glow and motes must reuse the same renderers.");
+            Assert.That(garden.OwnedResourceCount, Is.EqualTo(initialOwnedResources),
+                "Flower glow and mote animation must not keep creating artwork resources.");
             garden.StepPresentation(2.2f, true);
             Assert.That(garden.RetractionProgress, Is.EqualTo(1).Within(.001f));
             Assert.That(garden.TargetsReady, Is.False);

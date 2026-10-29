@@ -23,12 +23,17 @@ namespace Naispo.Interaction
         const float FlowerWorldSize = .60f;
         const int VineSegments = 20;
         const int LeavesPerVine = 4;
+        const int MotesPerFlower = 3;
+        const float FlowerLightRadius = .95f;
         readonly List<Object> ownedResources = new List<Object>();
         readonly Transform[] targets = new Transform[BudCount];
         readonly SpriteRenderer[] buds = new SpriteRenderer[BudCount];
         readonly SpriteRenderer[] flowers = new SpriteRenderer[BudCount];
         readonly SpriteRenderer[] flowerRadiance = new SpriteRenderer[BudCount];
         readonly SpriteRenderer[] flowerHearts = new SpriteRenderer[BudCount];
+        readonly SpriteRenderer[,] flowerMotes = new SpriteRenderer[BudCount, MotesPerFlower];
+        readonly Vector4[] flowerLights = new Vector4[BudCount];
+        readonly Vector4[] flowerLightColors = new Vector4[BudCount];
         readonly SpriteRenderer[] halos = new SpriteRenderer[BudCount];
         readonly SpriteRenderer[,] vines = new SpriteRenderer[BudCount, VineSegments];
         readonly SpriteRenderer[,] leaves = new SpriteRenderer[BudCount, LeavesPerVine];
@@ -37,6 +42,7 @@ namespace Naispo.Interaction
         readonly Vector2[] targetPositions = new Vector2[BudCount];
         readonly bool[] awakened = new bool[BudCount];
         readonly float[] wakeAge = new float[BudCount];
+        readonly float[] bloomStartTimes = new float[BudCount];
         readonly float[] bloomLevels = new float[BudCount];
         readonly float[] reveals = new float[BudCount];
         RallyVisualConfig config;
@@ -46,8 +52,11 @@ namespace Naispo.Interaction
         Sprite backdropSprite, veilSprite, lineSprite, glowSprite, budSprite, flowerSprite, vineLeafSprite;
         Sprite flowerRadianceSprite;
         Material flowerEmissionMaterial, flowerBloomMaterial;
-        Material candleMaterial;
+        Material candleMaterial, paintedBackgroundMaterial;
         static readonly int CandleTime = Shader.PropertyToID("_CandleTime");
+        static readonly int FlowerLightCount = Shader.PropertyToID("_FlowerLightCount");
+        static readonly int FlowerLights = Shader.PropertyToID("_FlowerLights");
+        static readonly int FlowerLightColors = Shader.PropertyToID("_FlowerLightColors");
         bool backdropConfigured, visible = true, destroyed;
         float viewportHeight, viewportAspect, presentationTime, bloomElapsed, bloomProgress;
         float arrivalElapsed = ArrivalSeconds;
@@ -156,6 +165,7 @@ namespace Naispo.Interaction
             if (!Valid(index) || awakened[index]) return;
             awakened[index] = true;
             wakeAge[index] = 0;
+            bloomStartTimes[index] = presentationTime;
             ApplyTargetVisual(index);
         }
 
@@ -168,6 +178,7 @@ namespace Naispo.Interaction
             {
                 awakened[i] = false;
                 wakeAge[i] = 0;
+                bloomStartTimes[i] = presentationTime;
                 bloomLevels[i] = 0;
                 reveals[i] = 0;
             }
@@ -243,6 +254,7 @@ namespace Naispo.Interaction
                 if (material != null)
                 {
                     background.sharedMaterial = material;
+                    paintedBackgroundMaterial = material;
                     material.SetFloat("_AmbientExposure", Mathf.Clamp(config.gardenAmbientExposure, .05f, 1f));
                     material.SetFloat("_EmissionExposure", Mathf.Clamp(config.gardenCandleExposure, 1f, 2f));
                     if (config.collectionBackgroundDepth == RallyBackdropDepthProfile.Glasshouse)
@@ -419,6 +431,14 @@ namespace Naispo.Interaction
                     glowSprite, Color.clear, 6, simple: true);
                 buds[i].enabled = flowers[i].enabled = halos[i].enabled = false;
                 flowerRadiance[i].enabled = flowerHearts[i].enabled = false;
+                for (int mote = 0; mote < MotesPerFlower; mote++)
+                {
+                    var view = RallySceneryArtwork.AddRenderer(root.transform,
+                        "Flower mote " + (i + 1) + "-" + (mote + 1), glowSprite, Color.clear, 10, simple: true);
+                    if (flowerBloomMaterial != null) view.sharedMaterial = flowerBloomMaterial;
+                    view.enabled = false;
+                    flowerMotes[i, mote] = view;
+                }
                 for (int segment = 0; segment < VineSegments; segment++)
                     vines[i, segment] = RallySceneryArtwork.AddRenderer(scenery.transform,
                         "Vine " + (i + 1) + " segment " + segment, lineSprite, Color.clear, -8);
@@ -441,6 +461,7 @@ namespace Naispo.Interaction
                 candleGlows[i].color = new Color(1f, .78f, .43f, .085f * flicker * phase);
             }
             for (int i = 0; i < BudCount; i++) ApplyTargetVisual(i);
+            ApplyFlowerBackgroundLight();
         }
 
         void ApplyTargetVisual(int index)
@@ -488,11 +509,52 @@ namespace Naispo.Interaction
             flowerHearts[index].enabled = open > .001f;
             flowerHearts[index].color = new Color(1f, .99f, .90f, open * (.80f + .12f * openingFlash));
             flowerHearts[index].transform.localScale = Vector3.one * (.25f + openingFlash * .04f + glowBeat * .03f);
+            flowerLights[index] = new Vector4(position.x, position.y, FlowerLightRadius,
+                open * (.95f * breath + openingFlash * .18f + glowBeat * .12f));
+            Color lightTint = tint.linear;
+            flowerLightColors[index] = new Vector4(lightTint.r, lightTint.g, lightTint.b, 0);
+            ApplyFlowerMotes(index, open, tint);
             float budHalo = reveal * .12f * (1 - open);
             halos[index].enabled = budHalo > .001f;
             halos[index].color = new Color(tint.r, tint.g, tint.b, budHalo);
             halos[index].transform.localScale = Vector3.one * .42f;
             ApplyVine(index, position + Vector2.up * .16f, top, reveal, open);
+        }
+
+        void ApplyFlowerBackgroundLight()
+        {
+            if (paintedBackgroundMaterial == null) return;
+            bool anyOpen = false;
+            for (int i = 0; i < BudCount; i++) anyOpen |= flowerLights[i].w > .001f;
+            // Fixed arrays avoid frame allocations. This lights only the painted
+            // surface; closed buds and the gameplay reveal radius never read it.
+            paintedBackgroundMaterial.SetInteger(FlowerLightCount, anyOpen ? BudCount : 0);
+            paintedBackgroundMaterial.SetVectorArray(FlowerLights, flowerLights);
+            paintedBackgroundMaterial.SetVectorArray(FlowerLightColors, flowerLightColors);
+        }
+
+        void ApplyFlowerMotes(int index, float open, Color tint)
+        {
+            float age = Mathf.Max(0, presentationTime - bloomStartTimes[index]);
+            for (int mote = 0; mote < MotesPerFlower; mote++)
+            {
+                var view = flowerMotes[index, mote];
+                float delay = .22f + mote * .48f;
+                view.enabled = open > .001f && age >= delay;
+                if (!view.enabled) continue;
+                // A few reused points drift up from the petals. Every cycle fades
+                // to zero at both ends, with no jump, trail or physics simulation.
+                float seed = index * 1.73f + mote * 2.41f;
+                float phase = Mathf.Repeat((age - delay) / (2.6f + mote * .27f), 1);
+                float fade = Mathf.Pow(Mathf.Sin(phase * Mathf.PI), 2);
+                float side = (index + mote) % 2 == 0 ? -1 : 1;
+                float x = side * .20f + Mathf.Sin(seed + phase * 4.2f) * (.06f + phase * .10f);
+                view.transform.localPosition = new Vector3(x, -.12f + phase * .66f, 0);
+                view.transform.localScale = Vector3.one * (.085f + .025f * fade);
+                Color color = Color.Lerp(tint, Color.white, .55f);
+                color.a = open * fade * .72f;
+                view.color = color;
+            }
         }
 
         Color PetalTint(int index)

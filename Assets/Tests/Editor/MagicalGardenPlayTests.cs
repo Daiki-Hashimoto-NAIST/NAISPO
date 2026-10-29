@@ -79,8 +79,20 @@ namespace Naispo.Tests
                 "Another flower's radiance must not reveal an unopened target.");
             Assert.That(TargetRenderer(4, "Flower heart").enabled, Is.False,
                 "An unopened target must not show an emissive center outside the ball light.");
+            for (int mote = 0; mote < 3; mote++)
+                Assert.That(TargetMote(4, mote).enabled, Is.False,
+                    "An unopened target must not emit motes outside the ball light.");
+            Assert.That(BackgroundMaterial.GetInteger("_FlowerLightCount"), Is.EqualTo(RallyGardenWorld.BudCount));
+            var lights = BackgroundMaterial.GetVectorArray("_FlowerLights");
+            Assert.That(lights.Length, Is.EqualTo(RallyGardenWorld.BudCount));
+            Assert.That(lights[0].w, Is.GreaterThan(0), "The opened flower must illuminate the background.");
+            Assert.That(Vector2.Distance(new Vector2(lights[0].x, lights[0].y), contact), Is.LessThan(.001f),
+                "Flower background light must stay centered on the actual bloom.");
             for (int i = 1; i < RallyGardenWorld.BudCount; i++)
+            {
                 Assert.That(Garden.FlowerBloom(i), Is.Zero);
+                Assert.That(lights[i].w, Is.Zero, "An unopened bud must not illuminate the background.");
+            }
         }
 
         [UnityTest]
@@ -199,30 +211,45 @@ namespace Naispo.Tests
                 game.RestartGame();
                 yield return WaitForServe();
                 yield return Collect(0);
+                yield return Frames(16);
                 SetSuspended(blocker, true);
                 yield return Frames(2);
                 float bloom = Garden.FlowerBloom(0);
                 var flower = Garden.FlowerRenderer(0);
-                var layers = new[] { flower, TargetRenderer(0, "Flower radiance"), TargetRenderer(0, "Flower heart") };
+                var layers = new[] { flower, TargetRenderer(0, "Flower radiance"), TargetRenderer(0, "Flower heart"),
+                    TargetMote(0, 0), TargetMote(0, 1), TargetMote(0, 2) };
+                var localPositions = new Vector3[layers.Length];
                 var scales = new Vector3[layers.Length];
                 var colors = new Color[layers.Length];
                 var rotations = new Quaternion[layers.Length];
                 for (int i = 0; i < layers.Length; i++)
                 {
+                    localPositions[i] = layers[i].transform.localPosition;
                     scales[i] = layers[i].transform.localScale;
                     colors[i] = layers[i].color;
                     rotations[i] = layers[i].transform.localRotation;
                 }
+                int lightCount = BackgroundMaterial.GetInteger("_FlowerLightCount");
+                var lights = BackgroundMaterial.GetVectorArray("_FlowerLights");
+                var lightColors = BackgroundMaterial.GetVectorArray("_FlowerLightColors");
                 Assert.That(bloom, Is.LessThan(1));
+                Assert.That(TargetMote(0, 0).enabled, Is.True, "Pause while a flower mote is already drifting.");
                 yield return Frames(35);
                 Assert.That(Garden.FlowerBloom(0), Is.EqualTo(bloom).Within(.0001f), blocker + ": opening froze.");
                 for (int i = 0; i < layers.Length; i++)
                 {
                     string layer = blocker + ": " + layers[i].name;
+                    Assert.That(layers[i].transform.localPosition, Is.EqualTo(localPositions[i]), layer + " position froze.");
                     Assert.That(layers[i].transform.localScale, Is.EqualTo(scales[i]), layer + " size froze.");
                     Assert.That(layers[i].color, Is.EqualTo(colors[i]), layer + " color froze.");
                     Assert.That(layers[i].transform.localRotation, Is.EqualTo(rotations[i]), layer + " rotation froze.");
                 }
+                Assert.That(BackgroundMaterial.GetInteger("_FlowerLightCount"), Is.EqualTo(lightCount),
+                    blocker + ": background light count froze.");
+                CollectionAssert.AreEqual(lights, BackgroundMaterial.GetVectorArray("_FlowerLights"),
+                    blocker + ": background light position and strength froze.");
+                CollectionAssert.AreEqual(lightColors, BackgroundMaterial.GetVectorArray("_FlowerLightColors"),
+                    blocker + ": background light color froze.");
                 SetSuspended(blocker, false);
                 yield return Frames(35);
                 Assert.That(Garden.FlowerBloom(0), Is.EqualTo(1).Within(.001f));
@@ -320,9 +347,18 @@ namespace Naispo.Tests
             Assert.That(Garden.AwakenedBudCount, Is.Zero);
             Assert.That(Garden.RetractionProgress, Is.Zero);
             Assert.That(Garden.BloomProgress, Is.Zero);
+            Assert.That(BackgroundMaterial.GetInteger("_FlowerLightCount"), Is.Zero,
+                "Previous blooms must not leave light on the background after reset.");
+            foreach (var light in BackgroundMaterial.GetVectorArray("_FlowerLights"))
+                Assert.That(light.w, Is.Zero, "Reset must clear every old flower's background illumination.");
             AssertAllFlowers(0, "Reset returns every flower to a closed bud.");
             for (int i = 0; i < RallyGardenWorld.BudCount; i++)
+            {
                 Assert.That(IsVisible(Garden.FlowerRenderer(i)), Is.False, "No previous bloom may leak into a new round.");
+                for (int mote = 0; mote < 3; mote++)
+                    Assert.That(TargetMote(i, mote).enabled, Is.False,
+                        "A previous flower's motes must not leak into the next round.");
+            }
         }
 
         void AssertAllFlowers(float expected, string message)
@@ -347,9 +383,13 @@ namespace Naispo.Tests
         static bool IsVisible(SpriteRenderer renderer) =>
             renderer.enabled && renderer.gameObject.activeInHierarchy && renderer.color.a > .001f;
 
-        SpriteRenderer TargetRenderer(int index, string prefix)
+        Material BackgroundMaterial => Garden.Background.GetComponent<SpriteRenderer>().sharedMaterial;
+
+        SpriteRenderer TargetMote(int index, int mote) => TargetRenderer(index, "Flower mote", "-" + (mote + 1));
+
+        SpriteRenderer TargetRenderer(int index, string prefix, string suffix = "")
         {
-            string name = prefix + " " + (index + 1);
+            string name = prefix + " " + (index + 1) + suffix;
             Transform target = Garden.FlowerRenderer(index).transform.parent.Find(name);
             Assert.That(target, Is.Not.Null, "Missing flower layer: " + name);
             var renderer = target.GetComponent<SpriteRenderer>();
