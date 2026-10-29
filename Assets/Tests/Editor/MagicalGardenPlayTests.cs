@@ -10,10 +10,7 @@ using Naispo.Interaction;
 
 namespace Naispo.Tests
 {
-    /// <summary>
-    /// Exercises collection and suspension through real Update/LateUpdate frames.
-    /// Local physics keeps the ball still without disabling the game clock.
-    /// </summary>
+    /// <summary>Actual game frames exercise hanging targets, bloom, and round replacement.</summary>
     public sealed class MagicalGardenPlayTests
     {
         const float FrameStep = 1f / 60f;
@@ -23,6 +20,7 @@ namespace Naispo.Tests
         AirHockeyBall ball;
         float previousCaptureDeltaTime;
         bool captureTimeChanged;
+        RallyGardenWorld Garden => game.GardenPresentation;
 
         enum Suspension { Pause, InputWait, Settings, ExternalOverlay, ComponentDisabled }
 
@@ -34,8 +32,7 @@ namespace Naispo.Tests
             previousCaptureDeltaTime = Time.captureDeltaTime;
             Time.captureDeltaTime = FrameStep;
             captureTimeChanged = true;
-
-            var scene = SceneManager.CreateScene("Magical garden play test",
+            var scene = SceneManager.CreateScene("Hanging flower play test",
                 new CreateSceneParameters(LocalPhysicsMode.Physics2D));
             var cameraObject = new GameObject("Test camera");
             SceneManager.MoveGameObjectToScene(cameraObject, scene);
@@ -52,115 +49,146 @@ namespace Naispo.Tests
             SceneManager.MoveGameObjectToScene(gameObject, scene);
             game = gameObject.AddComponent<CooperativeCoinGame>();
             game.Configure(ball, camera);
-            Assert.That(game.GardenPresentation, Is.Not.Null);
-            Assert.That(game.GardenPresentation.gameObject.scene, Is.EqualTo(scene));
+            Assert.That(Garden, Is.Not.Null);
+            Assert.That(Garden.gameObject.scene, Is.EqualTo(scene));
             yield return Frames(2);
         }
 
         [UnityTest]
-        public IEnumerator OneRealPickupTransfersOnceThenLightsOnlyItsBud()
+        public IEnumerator ContactOpensOnlyItsFlowerAndItStaysLitAfterTheBallLeaves()
         {
             yield return WaitForServe();
             yield return Collect(0);
-            var garden = game.GardenPresentation;
-            Assert.That(garden.TransferCount, Is.EqualTo(1));
-            Assert.That(garden.AwakenedBudCount, Is.Zero);
-            Assert.That(garden.IsAwake(0), Is.False);
-
-            // Twenty-four actual game frames are 0.4 seconds: still in flight.
-            yield return Frames(24);
-            Assert.That(garden.TransferCount, Is.EqualTo(1),
-                "The light must travel for 0.45 seconds before waking the bud.");
-            Assert.That(garden.AwakenedBudCount, Is.Zero);
-            yield return Frames(8);
-            Assert.That(garden.TransferCount, Is.Zero);
-            Assert.That(garden.AwakenedBudCount, Is.EqualTo(1));
-            Assert.That(garden.IsAwake(0), Is.True);
-
-            // The ball remains on the same collected star through more real frames.
+            Assert.That(Garden.AwakenedBudCount, Is.EqualTo(1));
+            Assert.That(Garden.IsAwake(0), Is.True);
+            Assert.That(Garden.FlowerBloom(0), Is.LessThan(1), "Opening must animate instead of switching artwork instantly.");
+            Vector2 contact = game.CollectionTargetPosition(0);
+            MoveBall(new Vector2(0, -2));
             yield return Frames(35);
             Assert.That(game.CollectedCount, Is.EqualTo(1));
             Assert.That(game.TeamScore, Is.EqualTo(1));
-            Assert.That(garden.TransferCount, Is.Zero,
-                "A collected star must not start another transfer each frame.");
-            Assert.That(garden.AwakenedBudCount, Is.EqualTo(1));
-            Assert.That(garden.BloomProgress, Is.Zero);
-            AssertAllFlowers(0, "Individual pickups light buds; flowers open after all nine stars.");
+            Assert.That(Garden.FlowerBloom(0), Is.EqualTo(1).Within(.001f));
+            Assert.That(IsVisible(Garden.FlowerRenderer(0)), Is.True, "A flower records success even outside the ball light.");
+            Assert.That(Vector2.Distance(Garden.FlowerRenderer(0).transform.position, contact), Is.LessThan(.001f),
+                "The flower must open on the touched bud, without transferring to a separate decoration.");
+            Assert.That(game.CoinVisibility(4), Is.Zero);
+            Assert.That(IsVisible(game.CollectionTargetRenderer(4)), Is.False,
+                "A completed flower must not reveal other buds.");
+            Assert.That(IsVisible(game.CollectionHaloRenderer(4)), Is.False);
+            for (int i = 1; i < RallyGardenWorld.BudCount; i++)
+                Assert.That(Garden.FlowerBloom(i), Is.Zero);
         }
 
         [UnityTest]
-        public IEnumerator ARealMissPreservesAwakeBudsAndFinishesAnInFlightTransferDuringServe()
+        public IEnumerator MissKeepsFlowersAndTargetLocationsWithoutStartingAnotherDescent()
         {
             yield return WaitForServe();
             yield return Collect(0);
             yield return Frames(32);
-            Assert.That(game.GardenPresentation.AwakenedBudCount, Is.EqualTo(1));
             yield return Collect(2);
-            Assert.That(game.GardenPresentation.TransferCount, Is.EqualTo(1));
-
+            var positions = TargetPositions();
             MoveBall(new Vector2(-game.HalfWidth * .5f, game.ArenaFloor - 1));
-            yield return Until(() => game.Misses == 1, 2, "The ball below the floor must trigger a real miss.");
+            yield return Until(() => game.Misses == 1, 2, "Dropping below the floor must trigger a real miss.");
             Assert.That(game.WaitingToServe, Is.True);
             Assert.That(game.CollectedCount, Is.EqualTo(2));
-            Assert.That(game.GardenPresentation.AwakenedBudCount, Is.EqualTo(1));
-            Assert.That(game.GardenPresentation.TransferCount, Is.EqualTo(1),
-                "BeginServe must preserve the transfer started by the last pickup.");
-
+            Assert.That(Garden.ArrivalProgress, Is.EqualTo(1));
+            Assert.That(Garden.TargetsReady, Is.True);
+            Assert.That(Garden.AwakenedBudCount, Is.EqualTo(2));
             yield return Frames(32);
-            Assert.That(game.WaitingToServe, Is.True, "The transfer must finish during the serve countdown.");
-            Assert.That(game.GardenPresentation.AwakenedBudCount, Is.EqualTo(2));
-            Assert.That(game.GardenPresentation.TransferCount, Is.Zero);
-            Assert.That(game.GardenPresentation.IsAwake(0), Is.True);
-            Assert.That(game.GardenPresentation.IsAwake(2), Is.True);
-            AssertAllFlowers(0, "Missing does not complete the round or open the flowers.");
+            Assert.That(game.WaitingToServe, Is.True);
+            Assert.That(Garden.FlowerBloom(0), Is.EqualTo(1));
+            Assert.That(Garden.FlowerBloom(2), Is.EqualTo(1), "An opening flower may finish during the next serve.");
+            Assert.That(IsVisible(Garden.FlowerRenderer(0)), Is.True);
+            Assert.That(IsVisible(Garden.FlowerRenderer(2)), Is.True);
+            AssertTargetPositions(positions, "A miss must retain the same hanging targets.");
+            Assert.That(Garden.RetractionProgress, Is.Zero);
         }
 
         [UnityTest]
-        public IEnumerator NineRealPickupsBloomWithinClearThenNextRoundResetsTheGarden()
+        public IEnumerator AllFlowersRiseBeforeTheNextRoundBringsDownFreshBuds()
         {
             yield return WaitForServe();
             yield return CollectAll();
             Assert.That(game.RoundComplete, Is.True);
             Assert.That(game.TeamScore, Is.EqualTo(CooperativeCoinGame.CoinsPerRound));
+            Assert.That(game.CanAdvanceBall, Is.False);
+            var positions = TargetPositions();
+            yield return Frames(35);
             Assert.That(game.Round, Is.EqualTo(1));
-
-            // 97 frames permit the 1.6-second bloom boundary without reaching
-            // the existing 2-second clear timeout, even at either coroutine phase.
-            yield return Frames(97);
-            Assert.That(game.Round, Is.EqualTo(1), "Full bloom must be visible before the round changes.");
-            Assert.That(game.GardenPresentation.AwakenedBudCount, Is.EqualTo(9));
-            Assert.That(game.GardenPresentation.TransferCount, Is.Zero);
-            Assert.That(game.GardenPresentation.BloomProgress, Is.EqualTo(1).Within(.001f));
-            AssertAllFlowers(1, "Every flower must finish opening by 1.6 seconds of the clear display.");
-
-            yield return Until(() => game.Round == 2, 3, "The clear display must advance to round two.");
+            AssertAllFlowers(1, "The final contacted flower opens before retraction.");
+            Assert.That(Garden.RetractionProgress, Is.Zero, "Give the complete arrangement a short visible hold.");
+            yield return Until(() => Garden.RetractionProgress > .6f, 3, "The completed vines must visibly retract.");
+            Assert.That(game.Round, Is.EqualTo(1));
+            for (int i = 0; i < positions.Length; i++)
+                Assert.That(Garden.TargetWorldPosition(i).y, Is.GreaterThan(positions[i].y + .2f));
+            Assert.That(game.CanAdvanceBall, Is.False);
+            yield return Until(() => game.Round == 2, 3, "Retraction must advance to the next round.");
             Assert.That(game.WaitingToServe, Is.True);
             Assert.That(game.CollectedCount, Is.Zero);
             Assert.That(game.TeamScore, Is.EqualTo(9));
             AssertGardenReset();
+            Assert.That(Garden.TargetsReady, Is.False);
+            Assert.That(Garden.ArrivalProgress, Is.LessThan(.1f));
+            yield return WaitForServe();
+            Assert.That(Garden.TargetsReady, Is.True);
+            Assert.That(Garden.ArrivalProgress, Is.EqualTo(1));
+            Assert.That(game.TeamScore, Is.EqualTo(9), "Descent cannot collect new buds automatically.");
         }
 
         [UnityTest]
-        public IEnumerator RestartClearsBothAwakeAndTravellingLightsImmediately()
+        public IEnumerator RestartAndModeSwitchClearOpenFlowersAndBeginFreshDescent()
         {
             yield return WaitForServe();
             yield return Collect(0);
             yield return Frames(32);
             yield return Collect(2);
-            Assert.That(game.GardenPresentation.AwakenedBudCount, Is.EqualTo(1));
-            Assert.That(game.GardenPresentation.TransferCount, Is.EqualTo(1));
-
             game.RestartGame();
             Assert.That(game.Round, Is.EqualTo(1));
             Assert.That(game.TeamScore, Is.Zero);
             Assert.That(game.CollectedCount, Is.Zero);
             AssertGardenReset();
-            yield return Frames(32);
+            Assert.That(Garden.ArrivalProgress, Is.Zero);
+            Assert.That(Garden.TargetsReady, Is.False);
+            yield return WaitForServe();
+            yield return Collect(4);
+            game.SetMode(RallyMode.Versus);
+            yield return Frames(2);
+            foreach (var renderer in Garden.GetComponentsInChildren<Renderer>(true))
+                Assert.That(renderer.enabled && renderer.gameObject.activeInHierarchy, Is.False,
+                    "Vines and blooms cannot remain in the duel.");
+            game.SetMode(RallyMode.StarCollection);
             AssertGardenReset();
+            Assert.That(Garden.TargetsReady, Is.False);
+            yield return WaitForServe();
+            Assert.That(game.CollectedCount, Is.Zero);
         }
 
         [UnityTest]
-        public IEnumerator EverySuspensionPathFreezesTransfersAndTheExistingPickupFade()
+        public IEnumerator DescendingTargetsCannotBeCollectedAndSettledArtworkMatchesCollisionCenters()
+        {
+            game.RestartGame();
+            Assert.That(Garden.GetComponentsInChildren<Collider2D>(true), Is.Empty,
+                "Vines are decoration and must never bounce or obstruct the ball.");
+            for (int frame = 0; frame < 20; frame++)
+            {
+                MoveBall(Garden.TargetWorldPosition(0));
+                yield return Frames(1);
+                Assert.That(game.CanAdvanceBall, Is.False);
+                Assert.That(game.CollectedCount, Is.Zero, "Arriving targets must not be hittable.");
+            }
+            yield return WaitForServe();
+            for (int i = 0; i < RallyGardenWorld.BudCount; i++)
+            {
+                Vector2 contact = game.CollectionTargetPosition(i);
+                Assert.That(Vector2.Distance(contact, Garden.TargetWorldPosition(i)), Is.LessThan(.001f));
+                Assert.That(Vector2.Distance(contact, game.CollectionTargetRenderer(i).bounds.center), Is.LessThan(.001f),
+                    "The displayed bud and the gameplay contact point must coincide.");
+            }
+            yield return Collect(0);
+        }
+
+        [UnityTest]
+        public IEnumerator EverySuspensionPathFreezesOpeningFlowersAndResumesThem()
         {
             foreach (Suspension blocker in Enum.GetValues(typeof(Suspension)))
             {
@@ -168,68 +196,70 @@ namespace Naispo.Tests
                 yield return WaitForServe();
                 yield return Collect(0);
                 SetSuspended(blocker, true);
-                // Observe a complete blocked frame before taking the snapshot;
-                // this avoids relying on whether the test resumed before Update.
                 yield return Frames(2);
-                var coin = Coin(0);
-                var scale = coin.transform.localScale;
-                float alpha = coin.color.a;
-                Assert.That(alpha, Is.GreaterThan(0), blocker + ": pickup fade starts visible.");
-                Assert.That(game.GardenPresentation.TransferCount, Is.EqualTo(1));
-                Assert.That(game.GardenPresentation.AwakenedBudCount, Is.Zero);
-
-                // Longer than both the 0.35-second fade and 0.45-second transfer.
+                float bloom = Garden.FlowerBloom(0);
+                var flower = Garden.FlowerRenderer(0);
+                Vector3 scale = flower.transform.localScale;
+                Color color = flower.color;
+                Assert.That(bloom, Is.LessThan(1));
                 yield return Frames(35);
-                Assert.That(game.GardenPresentation.TransferCount, Is.EqualTo(1), blocker + ": transfer clock froze.");
-                Assert.That(game.GardenPresentation.AwakenedBudCount, Is.Zero, blocker + ": bud stayed dormant.");
-                Assert.That(coin.color.a, Is.EqualTo(alpha).Within(.0001f), blocker + ": fade alpha froze.");
-                Assert.That(Vector3.Distance(coin.transform.localScale, scale), Is.LessThan(.0001f),
-                    blocker + ": pickup expansion froze.");
-                Assert.That(coin.enabled, Is.True, blocker + ": collected star did not vanish while suspended.");
-
+                Assert.That(Garden.FlowerBloom(0), Is.EqualTo(bloom).Within(.0001f), blocker + ": opening froze.");
+                Assert.That(flower.transform.localScale, Is.EqualTo(scale), blocker + ": size froze.");
+                Assert.That(flower.color, Is.EqualTo(color), blocker + ": color froze.");
                 SetSuspended(blocker, false);
                 yield return Frames(35);
-                Assert.That(game.GardenPresentation.TransferCount, Is.Zero, blocker + ": transfer resumed.");
-                Assert.That(game.GardenPresentation.AwakenedBudCount, Is.EqualTo(1));
-                Assert.That(coin.enabled, Is.False, blocker + ": pickup fade finished after resuming.");
-                AssertAllFlowers(0, blocker + ": resume does not open a flower before round completion.");
+                Assert.That(Garden.FlowerBloom(0), Is.EqualTo(1).Within(.001f));
+                Assert.That(IsVisible(flower), Is.True, blocker + ": the resumed flower stays visible.");
             }
         }
 
         [UnityTest]
-        public IEnumerator EverySuspensionPathFreezesFinalBloomAndPreservesTheClearCountdown()
+        public IEnumerator EverySuspensionPathFreezesArrivalAndTheServeCountdown()
+        {
+            foreach (Suspension blocker in Enum.GetValues(typeof(Suspension)))
+            {
+                game.RestartGame();
+                yield return Frames(12);
+                SetSuspended(blocker, true);
+                yield return Frames(2);
+                float arrival = Garden.ArrivalProgress;
+                var positions = TargetPositions();
+                Assert.That(arrival, Is.GreaterThan(0).And.LessThan(1));
+                yield return Frames(80);
+                Assert.That(game.WaitingToServe, Is.True, blocker + ": serve froze.");
+                Assert.That(Garden.ArrivalProgress, Is.EqualTo(arrival).Within(.0001f), blocker + ": descent froze.");
+                AssertTargetPositions(positions, blocker + ": targets stayed still.");
+                SetSuspended(blocker, false);
+                yield return Frames(3);
+                Assert.That(Garden.ArrivalProgress, Is.GreaterThan(arrival));
+            }
+            yield return WaitForServe();
+            Assert.That(Garden.TargetsReady, Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator EverySuspensionPathFreezesRetractionAndRoundReplacement()
         {
             yield return WaitForServe();
             yield return CollectAll();
-            yield return Frames(6);
-            Assert.That(game.GardenPresentation.BloomProgress, Is.GreaterThan(0).And.LessThan(1));
-
+            yield return Until(() => Garden.RetractionProgress > .15f, 3, "Begin the real retraction before pausing it.");
             foreach (Suspension blocker in Enum.GetValues(typeof(Suspension)))
             {
                 SetSuspended(blocker, true);
                 yield return Frames(2);
-                float progress = game.GardenPresentation.BloomProgress;
-                var flowers = new float[RallyGardenWorld.BudCount];
-                for (int i = 0; i < flowers.Length; i++) flowers[i] = game.GardenPresentation.FlowerBloom(i);
-                // More than a complete clear timeout passes while each blocker is active.
-                yield return Frames(125);
-                Assert.That(game.Round, Is.EqualTo(1), blocker + ": clear countdown must stop.");
+                float retraction = Garden.RetractionProgress;
+                var positions = TargetPositions();
+                yield return Frames(140);
+                Assert.That(game.Round, Is.EqualTo(1), blocker + ": the completed round must not be replaced while suspended.");
                 Assert.That(game.RoundComplete, Is.True);
-                Assert.That(game.GardenPresentation.BloomProgress, Is.EqualTo(progress).Within(.0001f),
-                    blocker + ": shared bloom progress froze.");
-                for (int i = 0; i < flowers.Length; i++)
-                    Assert.That(game.GardenPresentation.FlowerBloom(i), Is.EqualTo(flowers[i]).Within(.0001f),
-                        blocker + ": flower " + i + " froze.");
-
+                Assert.That(Garden.RetractionProgress, Is.EqualTo(retraction).Within(.0001f));
+                AssertTargetPositions(positions, blocker + ": retracting vines stayed still.");
                 SetSuspended(blocker, false);
                 yield return Frames(3);
-                Assert.That(game.GardenPresentation.BloomProgress, Is.GreaterThan(progress),
-                    blocker + ": bloom resumed from its previous progress.");
+                Assert.That(Garden.RetractionProgress, Is.GreaterThan(retraction));
             }
-            yield return Until(() => game.GardenPresentation.BloomProgress >= .999f, 3,
-                "The same clear animation must finish after all blockers are removed.");
-            Assert.That(game.Round, Is.EqualTo(1));
-            AssertAllFlowers(1, "The resumed clear animation finishes every flower.");
+            yield return Until(() => game.Round == 2, 3, "The same retraction must finish after all blockers are removed.");
+            AssertGardenReset();
         }
 
         IEnumerator CollectAll()
@@ -240,16 +270,14 @@ namespace Naispo.Tests
         IEnumerator Collect(int index)
         {
             int before = game.CollectedCount;
-            // Reset the swept path using the public light switch. Only the target
-            // star is touched, so the test cannot accidentally collect its neighbors.
             game.BallLightEnabled = false;
-            MoveBall(Coin(index).transform.position);
+            MoveBall(game.CollectionTargetPosition(index));
             game.BallLightEnabled = true;
-            yield return Until(() => game.CollectedCount > before, 2, "Real ball contact must collect star " + index + ".");
-            Assert.That(game.CollectedCount, Is.EqualTo(before + 1), "Each contact collects exactly one star.");
+            yield return Until(() => game.CollectedCount > before, 2, "Ball contact must bloom target " + index + ".");
+            Assert.That(game.CollectedCount, Is.EqualTo(before + 1), "Each contact blooms exactly one target.");
         }
 
-        IEnumerator WaitForServe() => Until(() => !game.WaitingToServe, 4, "The serve countdown must finish.");
+        IEnumerator WaitForServe() => Until(() => game.CanAdvanceBall, 4, "Descent and the serve countdown must finish.");
 
         void SetSuspended(Suspension blocker, bool active)
         {
@@ -260,7 +288,6 @@ namespace Naispo.Tests
                 case Suspension.Settings:
                     Assert.That(SettingsOpenField, Is.Not.Null);
                     SettingsOpenField.SetValue(game, active);
-                    // Match the UI's simulation refresh through an existing public setter.
                     game.SetInputReady(game.InputReady);
                     break;
                 case Suspension.ExternalOverlay:
@@ -273,21 +300,35 @@ namespace Naispo.Tests
 
         void AssertGardenReset()
         {
-            Assert.That(game.GardenPresentation.AwakenedBudCount, Is.Zero);
-            Assert.That(game.GardenPresentation.TransferCount, Is.Zero);
-            Assert.That(game.GardenPresentation.BloomProgress, Is.Zero);
+            Assert.That(Garden.AwakenedBudCount, Is.Zero);
+            Assert.That(Garden.RetractionProgress, Is.Zero);
+            Assert.That(Garden.BloomProgress, Is.Zero);
             AssertAllFlowers(0, "Reset returns every flower to a closed bud.");
+            for (int i = 0; i < RallyGardenWorld.BudCount; i++)
+                Assert.That(IsVisible(Garden.FlowerRenderer(i)), Is.False, "No previous bloom may leak into a new round.");
         }
 
         void AssertAllFlowers(float expected, string message)
         {
             for (int i = 0; i < RallyGardenWorld.BudCount; i++)
-                Assert.That(game.GardenPresentation.FlowerBloom(i), Is.EqualTo(expected).Within(.001f),
-                    message + " Index: " + i);
+                Assert.That(Garden.FlowerBloom(i), Is.EqualTo(expected).Within(.001f), message + " Index: " + i);
         }
 
-        SpriteRenderer Coin(int index) => game.transform.Find("Cooperative court/Shared coin " + (index + 1))
-            .GetComponent<SpriteRenderer>();
+        Vector2[] TargetPositions()
+        {
+            var positions = new Vector2[RallyGardenWorld.BudCount];
+            for (int i = 0; i < positions.Length; i++) positions[i] = Garden.TargetWorldPosition(i);
+            return positions;
+        }
+
+        void AssertTargetPositions(Vector2[] positions, string message)
+        {
+            for (int i = 0; i < positions.Length; i++)
+                Assert.That(Vector2.Distance(Garden.TargetWorldPosition(i), positions[i]), Is.LessThan(.0001f), message);
+        }
+
+        static bool IsVisible(SpriteRenderer renderer) =>
+            renderer.enabled && renderer.gameObject.activeInHierarchy && renderer.color.a > .001f;
 
         void MoveBall(Vector2 position)
         {

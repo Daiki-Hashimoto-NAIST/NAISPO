@@ -206,7 +206,7 @@ namespace Naispo.Tests
             {
                 Assert.That(game.CoinVisibility(index), Is.Zero);
                 Assert.That(IsVisible(Coin(index)), Is.False, "The actual star still requires the ball's light.");
-                Assert.That(IsVisible(Coin(index).transform.Find("Warm halo").GetComponent<SpriteRenderer>()), Is.False,
+                Assert.That(IsVisible(game.CollectionHaloRenderer(index)), Is.False,
                     "The star's normal halo must remain hidden as well.");
             }
         }
@@ -230,8 +230,7 @@ namespace Naispo.Tests
             return first < second ? RemainingStars[0] : RemainingStars[1];
         }
 
-        SpriteRenderer Coin(int index) => game.transform.Find("Cooperative court/Shared coin " + (index + 1))
-            .GetComponent<SpriteRenderer>();
+        SpriteRenderer Coin(int index) => game.CollectionTargetRenderer(index);
         SpriteRenderer Speck => game.transform.Find("Cooperative court/Star hint speck").GetComponent<SpriteRenderer>();
         SpriteRenderer HintHalo => game.transform.Find("Cooperative court/Star hint halo").GetComponent<SpriteRenderer>();
         bool HintVisible => IsVisible(Speck);

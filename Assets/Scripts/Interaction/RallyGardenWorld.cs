@@ -5,8 +5,8 @@ using UnityEngine.SceneManagement;
 namespace Naispo.Interaction
 {
     /// <summary>
-    /// Render-only midnight glasshouse. Nine peripheral life buds track the shared
-    /// collection round; the court owns every physical boundary and the light radius.
+    /// Render-only midnight glasshouse. Hanging light flowers occupy the shared
+    /// collection targets; the court owns collisions and the ball reveal radius.
     /// </summary>
     // Explicit previews may allocate generated art in edit mode. Update only retracks
     // the camera layout; presentation time still advances only from StepPresentation.
@@ -14,32 +14,40 @@ namespace Naispo.Interaction
     public sealed class RallyGardenWorld : MonoBehaviour
     {
         public const int BudCount = 9;
-        const float TransferSeconds = .45f;
-        const float BloomSeconds = 1.6f;
-        const float BudWorldSize = .26f;
-        const float FlowerWorldSize = .46f;
+        public const float RoundTransitionSeconds = 2.2f;
+        const float ArrivalSeconds = 1f;
+        const float FlowerOpenSeconds = .42f;
+        const float CompletionHoldSeconds = .85f;
+        const float RetractSeconds = 1.15f;
+        const float BudWorldSize = .38f;
+        const float FlowerWorldSize = .60f;
+        const int VineSegments = 20;
+        const int LeavesPerVine = 4;
         readonly List<Object> ownedResources = new List<Object>();
+        readonly Transform[] targets = new Transform[BudCount];
         readonly SpriteRenderer[] buds = new SpriteRenderer[BudCount];
         readonly SpriteRenderer[] flowers = new SpriteRenderer[BudCount];
         readonly SpriteRenderer[] halos = new SpriteRenderer[BudCount];
-        readonly SpriteRenderer[] motes = new SpriteRenderer[BudCount];
+        readonly SpriteRenderer[,] vines = new SpriteRenderer[BudCount, VineSegments];
+        readonly SpriteRenderer[,] leaves = new SpriteRenderer[BudCount, LeavesPerVine];
         readonly SpriteRenderer[] candleGlows = new SpriteRenderer[6];
         readonly Vector3[] budOrigins = new Vector3[BudCount];
+        readonly Vector2[] targetPositions = new Vector2[BudCount];
         readonly bool[] awakened = new bool[BudCount];
-        readonly bool[] transferActive = new bool[BudCount];
-        readonly float[] transferAge = new float[BudCount];
         readonly float[] wakeAge = new float[BudCount];
         readonly float[] bloomLevels = new float[BudCount];
-        readonly Vector2[] transferOrigins = new Vector2[BudCount];
+        readonly float[] reveals = new float[BudCount];
         RallyVisualConfig config;
         GameObject scenery;
         Camera gardenCamera;
         Transform backdrop, veil;
-        Sprite backdropSprite, veilSprite, lineSprite, glowSprite, budSprite, flowerSprite, moteSprite;
+        Sprite backdropSprite, veilSprite, lineSprite, glowSprite, budSprite, flowerSprite, vineLeafSprite;
         Material candleMaterial;
         static readonly int CandleTime = Shader.PropertyToID("_CandleTime");
         bool backdropConfigured, visible = true, destroyed;
         float viewportHeight, viewportAspect, presentationTime, bloomElapsed, bloomProgress;
+        float arrivalElapsed = ArrivalSeconds;
+        int roundIndex;
         bool roundComplete;
         Vector3 cameraPosition;
 
@@ -53,26 +61,28 @@ namespace Naispo.Interaction
             }
         }
 
-        public int TransferCount
-        {
-            get
-            {
-                int count = 0;
-                for (int i = 0; i < transferActive.Length; i++) if (transferActive[i]) count++;
-                return count;
-            }
-        }
-
+        // Compatibility for consumers of the former peripheral-bud presentation.
+        public int TransferCount => 0;
         public float BloomProgress => bloomProgress;
+        public float ArrivalProgress => Mathf.Clamp01(arrivalElapsed / ArrivalSeconds);
+        public float RetractionProgress => Mathf.Clamp01((bloomElapsed - CompletionHoldSeconds) /
+            (RoundTransitionSeconds - CompletionHoldSeconds));
+        public bool TargetsReady => ArrivalProgress >= 1 && !roundComplete;
         public bool IsInitialized => scenery != null;
         public bool UsesConfiguredBackground => backdropConfigured;
         public int OwnedResourceCount => ownedResources.Count;
         public Transform Background => backdrop;
         public Sprite BackgroundSprite => backdropSprite;
-        public bool IsAwake(int index) => index >= 0 && index < BudCount && awakened[index];
-        public float FlowerBloom(int index) => index >= 0 && index < BudCount ? bloomLevels[index] : 0;
-        public Vector2 BudLocalPosition(int index) => index >= 0 && index < BudCount
+        public bool IsAwake(int index) => Valid(index) && awakened[index];
+        public float FlowerBloom(int index) => Valid(index) ? bloomLevels[index] : 0;
+        public Vector2 BudLocalPosition(int index) => Valid(index)
             ? new Vector2(budOrigins[index].x, budOrigins[index].y) : default;
+        public Vector2 TargetWorldPosition(int index) => Valid(index)
+            ? targets[index] != null ? (Vector2)targets[index].position : targetPositions[index] : default;
+        public SpriteRenderer BudRenderer(int index) => Valid(index) ? buds[index] : null;
+        public SpriteRenderer FlowerRenderer(int index) => Valid(index) ? flowers[index] : null;
+        public SpriteRenderer HaloRenderer(int index) => Valid(index) ? halos[index] : null;
+        static bool Valid(int index) => index >= 0 && index < BudCount;
 
         public void Initialize(float halfWidth, float floorY, Camera camera, RallyVisualConfig visualConfig = null)
         {
@@ -84,17 +94,17 @@ namespace Naispo.Interaction
 
             lineSprite = CreateOwnedTextureSprite(NewSolidTexture(), "Glasshouse line");
             glowSprite = CreateOwnedTextureSprite(CreateGlowTexture(64), "Glasshouse glow");
-            budSprite = Normalized(config != null ? config.bud : null, BudWorldSize, "Configured life bud") ??
-                Normalized(CreateOwnedTextureSprite(CreateBudTexture(), "Procedural life bud"), BudWorldSize,
-                    "Procedural life bud");
-            flowerSprite = Normalized(config != null ? config.flower : null, FlowerWorldSize, "Configured life flower") ??
-                Normalized(CreateOwnedTextureSprite(CreateFlowerTexture(), "Procedural life flower"), FlowerWorldSize,
-                    "Procedural life flower");
-            moteSprite = CreateOwnedTextureSprite(CreateGlowTexture(32), "Life mote");
+            budSprite = Normalized(config != null ? config.bud : null, BudWorldSize, "Configured hanging bud") ??
+                Normalized(CreateOwnedTextureSprite(RallyHangingFlowerArtwork.CreateBudTexture(), "Procedural hanging bud"), BudWorldSize,
+                    "Procedural hanging bud");
+            flowerSprite = Normalized(config != null ? config.flower : null, FlowerWorldSize, "Configured light flower") ??
+                Normalized(CreateOwnedTextureSprite(RallyHangingFlowerArtwork.CreateFlowerTexture(), "Procedural light flower"), FlowerWorldSize,
+                    "Procedural light flower");
+            vineLeafSprite = CreateOwnedTextureSprite(CreateLeafTexture(), "Hanging vine leaf");
 
             BuildBackdrop(camera);
             // A supplied painting already contains the architecture and foliage.
-            // Keep the living buds separate so collection still animates the room.
+            // Targets hang in front of the painting and react to the ball independently.
             if (!backdropConfigured) BuildArchitecture(halfWidth, floorY, camera);
             BuildBuds(halfWidth, floorY, camera);
             ApplyVisuals();
@@ -109,30 +119,54 @@ namespace Naispo.Interaction
             if (value) { RefreshLayout(); ApplyVisuals(); }
         }
 
-        /// <summary>Starts exactly one transfer for a successfully collected star.</summary>
-        public void NotifyStarCollected(int index, Vector2 origin)
+        /// <summary>Positions are court/world coordinates; decoration never moves the collision targets.</summary>
+        public void SetTargetPositions(Vector2[] worldPositions, int round)
         {
-            if (index < 0 || index >= BudCount || awakened[index] || transferActive[index]) return;
-            transferActive[index] = true;
-            transferAge[index] = 0;
-            transferOrigins[index] = origin;
-            if (motes[index] != null)
+            if (worldPositions == null) return;
+            roundIndex = Mathf.Max(0, round);
+            for (int i = 0; i < Mathf.Min(BudCount, worldPositions.Length); i++)
             {
-                motes[index].enabled = true;
-                motes[index].transform.position = origin;
+                Vector2 position = worldPositions[i];
+                if (!float.IsFinite(position.x) || !float.IsFinite(position.y)) continue;
+                targetPositions[i] = position;
+                budOrigins[i] = scenery != null ? scenery.transform.InverseTransformPoint(position) : (Vector3)position;
             }
+            ApplyVisuals();
         }
 
-        /// <summary>Clears round progress but keeps the generated scenery and layout.</summary>
+        /// <summary>The caller supplies only the actual ball-light reveal amount.</summary>
+        public void SetTargetReveal(int index, float reveal)
+        {
+            if (!Valid(index)) return;
+            reveals[index] = float.IsNaN(reveal) ? 0 : Mathf.Clamp01(reveal);
+            ApplyTargetVisual(index);
+        }
+
+        /// <summary>A contact opens this flower once; bloomed flowers remain visible.</summary>
+        public void NotifyBudBloomed(int index)
+        {
+            if (!Valid(index) || awakened[index]) return;
+            awakened[index] = true;
+            wakeAge[index] = 0;
+            ApplyTargetVisual(index);
+        }
+
+        public void NotifyStarCollected(int index, Vector2 origin) => NotifyBudBloomed(index);
+
+        /// <summary>Fresh closed buds descend on their vines before the next serve.</summary>
         public void ResetRoundPresentation()
         {
             for (int i = 0; i < BudCount; i++)
             {
-                awakened[i] = false; transferActive[i] = false;
-                transferAge[i] = 0; wakeAge[i] = 0; bloomLevels[i] = 0;
-                if (motes[i] != null) motes[i].enabled = false;
+                awakened[i] = false;
+                wakeAge[i] = 0;
+                bloomLevels[i] = 0;
+                reveals[i] = 0;
             }
-            bloomElapsed = 0; bloomProgress = 0; roundComplete = false;
+            arrivalElapsed = 0;
+            bloomElapsed = 0;
+            bloomProgress = 0;
+            roundComplete = false;
             ApplyVisuals();
         }
 
@@ -144,29 +178,14 @@ namespace Naispo.Interaction
         {
             float step = dt > 0 && !float.IsInfinity(dt) && !float.IsNaN(dt) ? dt : 0;
             presentationTime += step;
+            arrivalElapsed = Mathf.Min(ArrivalSeconds, arrivalElapsed + step);
             roundComplete = roundCompleteNow;
             for (int i = 0; i < BudCount; i++)
-            {
-                if (transferActive[i])
-                {
-                    transferAge[i] += step;
-                    if (transferAge[i] >= TransferSeconds)
-                    {
-                        transferActive[i] = false;
-                        transferAge[i] = TransferSeconds;
-                        if (!awakened[i]) { awakened[i] = true; wakeAge[i] = 0; }
-                    }
-                }
-                if (awakened[i]) wakeAge[i] += step;
-            }
+                if (awakened[i]) wakeAge[i] = Mathf.Min(FlowerOpenSeconds + 1f, wakeAge[i] + step);
             if (roundCompleteNow)
             {
-                bloomElapsed = Mathf.Min(BloomSeconds, bloomElapsed + step);
-                bloomProgress = Mathf.Clamp01(bloomElapsed / BloomSeconds);
-            }
-            else
-            {
-                bloomElapsed = 0; bloomProgress = 0;
+                bloomElapsed = Mathf.Min(RoundTransitionSeconds, bloomElapsed + step);
+                bloomProgress = Mathf.Clamp01(bloomElapsed / CompletionHoldSeconds);
             }
             ApplyVisuals();
         }
@@ -356,52 +375,39 @@ namespace Naispo.Interaction
 
         void BuildBuds(float halfWidth, float floorY, Camera camera)
         {
-            float height = camera.orthographicSize * 2;
-            Color jade = config != null ? config.playerJade : new Color(.64f, .94f, .80f);
-            Color gold = config != null ? config.gardenGold : new Color(.78f, .64f, .34f);
+            float halfHeight = camera.orthographicSize;
+            Vector2 center = camera.transform.position;
             for (int i = 0; i < BudCount; i++)
             {
-                bool leftSide = i < 4;
-                int local = leftSide ? i : i - 4;
-                int count = leftSide ? 4 : 5;
-                float x = (leftSide ? -1 : 1) * (halfWidth * .86f - (i % 2) * .10f);
-                float y = floorY + height * (.10f + local * (.66f / Mathf.Max(1, count - 1)));
-                budOrigins[i] = new Vector3(x, y, 0);
-                var root = CreateChild("Life bud " + (i + 1), scenery.transform);
-                root.transform.localPosition = budOrigins[i];
-                var bud = RallySceneryArtwork.AddRenderer(root.transform, "Closed bud " + (i + 1),
-                    budSprite, Muted(Color.Lerp(jade, gold, i / 8f * .55f), .58f), 5, simple: true);
-                bud.transform.localPosition = Vector3.zero;
-                bud.transform.localScale = Vector3.one;
-                bud.transform.localRotation = Quaternion.Euler(0, 0, (i % 2 == 0 ? -1 : 1) * 7f);
-                var halo = RallySceneryArtwork.AddRenderer(root.transform, "Bud halo " + (i + 1),
-                    glowSprite, new Color(gold.r, gold.g, gold.b, .035f), 4, simple: true);
-                halo.transform.localScale = new Vector3(.30f, .30f, 1);
-                var flower = RallySceneryArtwork.AddRenderer(root.transform, "Flower " + (i + 1),
-                    flowerSprite, new Color(1, 1, 1, 0), 6, simple: true);
-                flower.transform.localPosition = new Vector3(0, -.01f, 0);
-                flower.transform.localScale = Vector3.one * (BudWorldSize / FlowerWorldSize);
-                flower.enabled = false;
-                var stem = RallySceneryArtwork.AddQuad(root.transform, "Stem " + (i + 1), lineSprite,
-                    new Color(jade.r * .5f, jade.g * .55f, jade.b * .5f, .28f), 3,
-                    new Vector2(0, -.20f), new Vector2(.014f, .26f));
-                stem.transform.localRotation = Quaternion.Euler(0, 0, (i % 2 == 0 ? 1 : -1) * 5f);
-                buds[i] = bud; halos[i] = halo; flowers[i] = flower;
-                var mote = RallySceneryArtwork.AddRenderer(scenery.transform, "Magic mote " + (i + 1),
-                    moteSprite, new Color(gold.r, gold.g, gold.b, .9f), 8, simple: true);
-                mote.transform.localScale = Vector3.one * .12f;
-                mote.enabled = false;
-                motes[i] = mote;
+                // A useful standalone preview; the game immediately supplies its own arc.
+                float u = i / (float)(BudCount - 1) * 2 - 1;
+                targetPositions[i] = center + new Vector2(u * halfWidth * .49f,
+                    Mathf.Lerp(-halfHeight * .06f, halfHeight * .52f, 1 - u * u));
+                budOrigins[i] = scenery.transform.InverseTransformPoint(targetPositions[i]);
+                var root = CreateChild("Hanging light flower " + (i + 1), scenery.transform);
+                targets[i] = root.transform;
+                root.transform.position = targetPositions[i];
+                buds[i] = RallySceneryArtwork.AddRenderer(root.transform, "Closed bud " + (i + 1),
+                    budSprite, Color.clear, 7, simple: true);
+                flowers[i] = RallySceneryArtwork.AddRenderer(root.transform, "Flower " + (i + 1),
+                    flowerSprite, Color.clear, 8, simple: true);
+                halos[i] = RallySceneryArtwork.AddRenderer(root.transform, "Bud halo " + (i + 1),
+                    glowSprite, Color.clear, 6, simple: true);
+                buds[i].enabled = flowers[i].enabled = halos[i].enabled = false;
+                for (int segment = 0; segment < VineSegments; segment++)
+                    vines[i, segment] = RallySceneryArtwork.AddRenderer(scenery.transform,
+                        "Vine " + (i + 1) + " segment " + segment, lineSprite, Color.clear, -8);
+                for (int leaf = 0; leaf < LeavesPerVine; leaf++)
+                    leaves[i, leaf] = RallySceneryArtwork.AddRenderer(scenery.transform,
+                        "Vine " + (i + 1) + " leaf " + leaf, vineLeafSprite, Color.clear, -7, simple: true);
             }
         }
 
         void ApplyVisuals()
         {
-            // Share the garden's pause-aware clock; no realtime shader clock or
-            // scene lights that could reveal stars outside the ball's light.
+            // This explicit, pause-aware clock also drives the candles in the painting.
+            // Neither flowers nor their halos create scene lights or reveal other buds.
             if (candleMaterial != null) candleMaterial.SetFloat(CandleTime, presentationTime);
-            Color gold = config != null ? config.gardenGold : new Color(.78f, .64f, .34f);
-            Color jade = config != null ? config.playerJade : new Color(.64f, .94f, .80f);
             float flicker = .86f + .14f * Mathf.Sin(presentationTime * 1.7f);
             for (int i = 0; i < candleGlows.Length; i++)
             {
@@ -409,48 +415,115 @@ namespace Naispo.Interaction
                 float phase = .84f + .16f * Mathf.Sin(presentationTime * 1.9f + i * .7f);
                 candleGlows[i].color = new Color(1f, .78f, .43f, .085f * flicker * phase);
             }
-            for (int i = 0; i < BudCount; i++)
+            for (int i = 0; i < BudCount; i++) ApplyTargetVisual(i);
+        }
+
+        void ApplyTargetVisual(int index)
+        {
+            if (buds[index] == null || gardenCamera == null) return;
+            Vector2 destination = targetPositions[index];
+            float top = gardenCamera.transform.position.y + gardenCamera.orthographicSize + .34f;
+            float parkedY = top + .68f;
+            float descend = Mathf.SmoothStep(0, 1, Mathf.Clamp01((arrivalElapsed - index * .022f) / .78f));
+            float retract = Mathf.SmoothStep(0, 1, Mathf.Clamp01(
+                (bloomElapsed - CompletionHoldSeconds - index * .024f) / RetractSeconds));
+            Vector2 position = new Vector2(destination.x,
+                Mathf.Lerp(Mathf.Lerp(parkedY, destination.y, descend), parkedY, retract));
+            targets[index].position = position;
+            // The tip is fixed on the collision target throughout active play. Only
+            // the middle of each vine sways, so rendering never suggests a false hit.
+            float open = awakened[index] ? Mathf.SmoothStep(0, 1,
+                Mathf.Clamp01(wakeAge[index] / FlowerOpenSeconds)) : 0;
+            bloomLevels[index] = open;
+            float reveal = awakened[index] ? 1 : reveals[index];
+            float glowBeat = roundComplete ? Mathf.Sin(Mathf.Clamp01(bloomElapsed / CompletionHoldSeconds) * Mathf.PI) : 0;
+            Color tint = PetalTint(index);
+            Color budTint = config != null && config.bud != null ? Color.white : tint;
+            float budAlpha = reveal * (1 - open);
+            buds[index].enabled = budAlpha > .001f;
+            buds[index].color = new Color(budTint.r, budTint.g, budTint.b, budAlpha);
+            buds[index].transform.localScale = Vector3.one * Mathf.Lerp(1, 1.13f, open);
+            buds[index].transform.localRotation = Quaternion.identity;
+            flowers[index].enabled = open > .001f;
+            flowers[index].color = new Color(tint.r, tint.g, tint.b, open);
+            float unfurl = Mathf.Lerp(.45f, 1f, open) + Mathf.Sin(open * Mathf.PI) * .13f;
+            flowers[index].transform.localScale = Vector3.one * unfurl;
+            flowers[index].transform.localRotation = config != null && config.flower != null
+                ? Quaternion.identity
+                : Quaternion.Euler(0, 0, index * 19f + roundIndex * 7f - (1 - open) * 25f);
+            halos[index].enabled = reveal > .001f;
+            halos[index].color = new Color(tint.r, tint.g, tint.b,
+                reveal * (.12f + open * .12f + glowBeat * .16f));
+            halos[index].transform.localScale = Vector3.one * (.42f + open * .30f + glowBeat * .12f);
+            ApplyVine(index, position + Vector2.up * .16f, top, reveal, open);
+        }
+
+        Color PetalTint(int index)
+        {
+            // Imported paintings keep their authored colors. The native flowers vary
+            // quietly between ivory, mint and warm gold from one round to the next.
+            if (config != null && config.flower != null) return Color.white;
+            float variation = (roundIndex + index / 3) % 3;
+            if (variation < 1) return new Color(1f, .97f, .86f);
+            if (variation < 2) return new Color(.79f, 1f, .90f);
+            return new Color(1f, .89f, .67f);
+        }
+
+        void ApplyVine(int index, Vector2 tip, float top, float reveal, float open)
+        {
+            bool inView = tip.y < top;
+            float length = Mathf.Max(0, top - tip.y);
+            float anchorX = targetPositions[index].x + Mathf.Sin(index * 1.91f + roundIndex * .32f) * .16f;
+            Vector2 anchor = new Vector2(anchorX, top);
+            float sway = Mathf.Sin(presentationTime * .72f + index * 1.4f) * .065f;
+            Color foliage = config != null ? config.gardenFoliage : new Color(.13f, .31f, .24f);
+            Color stemColor = Color.Lerp(foliage * 1.25f, new Color(.48f, .65f, .43f), open * .25f);
+            Vector2 previous = anchor;
+            for (int segment = 0; segment < VineSegments; segment++)
             {
-                if (buds[i] == null) continue;
-                float wake = awakened[i] ? Mathf.Clamp01(wakeAge[i] / .28f) : 0;
-                // A collected star lights and grows its own bud. The full flower is a
-                // separate completion bloom, so no bud opens early before all nine.
-                float open = roundComplete ? bloomProgress : 0;
-                bloomLevels[i] = open;
-                Color budColor = Color.Lerp(Muted(Color.Lerp(jade, gold, i / 8f * .55f), .58f), gold, wake);
-                budColor.a = Mathf.Lerp(.55f, .92f, wake);
-                buds[i].color = budColor;
-                buds[i].transform.localScale = Vector3.one * (1 + wake * .10f);
-                if (halos[i] != null)
+                float t = (segment + 1f) / VineSegments;
+                Vector2 next = VinePoint(anchor, tip, t, sway, index);
+                SpriteRenderer stem = vines[index, segment];
+                stem.enabled = inView;
+                if (inView)
                 {
-                    halos[i].enabled = wake > .001f || open > .001f;
-                    halos[i].color = new Color(gold.r, gold.g, gold.b, .035f + wake * .075f + open * .03f);
-                    halos[i].transform.localScale = Vector3.one * (.30f + wake * .10f);
+                    Vector2 delta = next - previous;
+                    stem.transform.position = (previous + next) * .5f;
+                    stem.transform.localRotation = Quaternion.Euler(0, 0, Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg);
+                    stem.transform.localScale = new Vector3(delta.magnitude + .008f, .024f, 1);
+                    float distanceFromTip = length * (1 - (t - .5f / VineSegments));
+                    float lowerFade = Mathf.SmoothStep(0, 1, Mathf.Clamp01((distanceFromTip - .16f) / .95f));
+                    float alpha = .52f * Mathf.Lerp(lowerFade, 1, reveal);
+                    stem.color = new Color(stemColor.r, stemColor.g, stemColor.b, alpha);
                 }
-                if (flowers[i] != null)
-                {
-                    flowers[i].enabled = open > .001f;
-                    flowers[i].color = new Color(1, 1, 1, open * .94f);
-                    flowers[i].transform.localScale = Vector3.one *
-                        Mathf.Lerp(BudWorldSize / FlowerWorldSize, 1f, open);
-                    flowers[i].transform.localRotation = Quaternion.Euler(0, 0, presentationTime * 3.2f + i * 17f);
-                }
-                if (motes[i] == null) continue;
-                if (!transferActive[i]) { motes[i].enabled = false; continue; }
-                float amount = Mathf.Clamp01(transferAge[i] / TransferSeconds);
-                Vector2 origin = transferOrigins[i];
-                // Bud origins are decoration-local. Convert them to world space so the
-                // mote still reaches the bud when the camera (and scenery) shifts on x/y.
-                Vector2 target = scenery.transform.TransformPoint(budOrigins[i]);
-                Vector2 position = Vector2.Lerp(origin, target, Mathf.SmoothStep(0, 1, amount));
-                position += new Vector2(0, Mathf.Sin(amount * Mathf.PI) * .16f);
-                motes[i].enabled = true;
-                motes[i].transform.position = new Vector3(position.x, position.y, 0);
-                motes[i].color = new Color(gold.r, gold.g, gold.b, Mathf.Lerp(.95f, .25f, amount));
+                previous = next;
+            }
+            for (int leaf = 0; leaf < LeavesPerVine; leaf++)
+            {
+                SpriteRenderer view = leaves[index, leaf];
+                float t = .22f + leaf * .18f + (index % 2) * .035f;
+                float distanceFromTip = length * (1 - t);
+                view.enabled = inView && length > .55f;
+                if (!view.enabled) continue;
+                int side = (index + leaf) % 2 == 0 ? -1 : 1;
+                Vector2 attach = VinePoint(anchor, tip, t, sway, index);
+                view.transform.position = attach + new Vector2(side * .045f, -.035f);
+                view.transform.localRotation = Quaternion.Euler(0, 0, side * 52f);
+                view.transform.localScale = new Vector3(.11f, .13f, 1);
+                float lowerFade = Mathf.SmoothStep(0, 1, Mathf.Clamp01((distanceFromTip - .18f) / .95f));
+                // The leaf texture already carries the foliage palette. Keep
+                // that color instead of multiplying it by a second dark green.
+                view.color = new Color(.95f, 1f, .90f,
+                    .62f * Mathf.Lerp(lowerFade, 1, reveal));
             }
         }
 
-        static Color Muted(Color color, float alpha) => new Color(color.r, color.g, color.b, alpha);
+        static Vector2 VinePoint(Vector2 anchor, Vector2 tip, float amount, float sway, int index)
+        {
+            Vector2 point = Vector2.Lerp(anchor, tip, amount);
+            point.x += Mathf.Sin(amount * Mathf.PI) * (sway + Mathf.Sin(amount * Mathf.PI * 2 + index) * .045f);
+            return point;
+        }
 
         Texture2D CreateBackgroundTexture()
         {
@@ -500,59 +573,9 @@ namespace Naispo.Interaction
                 float ny = Mathf.Abs((y + .5f) / height * 2 - 1);
                 float center = 1 - Mathf.SmoothStep(0, 1, Mathf.InverseLerp(.18f, .92f, Mathf.Max(nx * .82f, ny)));
                 // The painted room already has a quiet center; preserve its detail
-                // and edge lighting while keeping the ball and stars legible.
+                // and edge lighting while keeping the ball and flowers legible.
                 float opacity = backdropConfigured ? .24f : .48f;
                 pixels[y * width + x] = new Color(dark.r, dark.g, dark.b, center * opacity);
-            }
-            texture.SetPixels32(pixels);
-            texture.Apply(false, true);
-            return texture;
-        }
-
-        Texture2D CreateBudTexture()
-        {
-            const int width = 48, height = 80;
-            var texture = RallySceneryArtwork.NewTexture(width, height, "Procedural closed life bud");
-            var pixels = new Color32[width * height];
-            Color jade = config != null ? config.playerJade : new Color(.64f, .94f, .80f);
-            Color gold = config != null ? config.gardenGold : new Color(.78f, .64f, .34f);
-            for (int y = 0; y < height; y++)
-            for (int x = 0; x < width; x++)
-            {
-                float v = (y + .5f) / height;
-                float half = 17f * Mathf.Sin(Mathf.PI * Mathf.Clamp01(v * .96f + .02f)) * (1 - .46f * v);
-                float dx = Mathf.Abs(x + .5f - width * .5f);
-                float edge = Mathf.Clamp01((half - dx) / 1.6f);
-                float rim = Mathf.Clamp01((dx - half + 3.2f) / 3.2f);
-                Color color = Color.Lerp(jade * .72f, gold, Mathf.SmoothStep(0, 1, rim * .85f));
-                color.a = edge;
-                pixels[y * width + x] = color;
-            }
-            texture.SetPixels32(pixels);
-            texture.Apply(false, true);
-            return texture;
-        }
-
-        Texture2D CreateFlowerTexture()
-        {
-            const int size = 96;
-            var texture = RallySceneryArtwork.NewTexture(size, size, "Procedural life flower");
-            var pixels = new Color32[size * size];
-            Color jade = config != null ? config.playerJade : new Color(.64f, .94f, .80f);
-            Color gold = config != null ? config.gardenGold : new Color(.78f, .64f, .34f);
-            for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-            {
-                float dx = (x + .5f) / size * 2 - 1, dy = (y + .5f) / size * 2 - 1;
-                float radius = Mathf.Sqrt(dx * dx + dy * dy);
-                float angle = Mathf.Atan2(dy, dx);
-                float petalRadius = .26f + .30f * Mathf.Pow(Mathf.Max(0, Mathf.Cos(angle * 5)), .55f);
-                float petal = Mathf.Clamp01((petalRadius - radius) / .035f);
-                float center = Mathf.Clamp01((.22f - radius) / .035f);
-                Color petalColor = Color.Lerp(jade, gold, Mathf.Clamp01(.30f + .45f * Mathf.Cos(angle * 5 + .4f)));
-                Color color = center > .5f ? gold : petalColor;
-                color.a = Mathf.Max(petal * .88f, center);
-                pixels[y * size + x] = color;
             }
             texture.SetPixels32(pixels);
             texture.Apply(false, true);

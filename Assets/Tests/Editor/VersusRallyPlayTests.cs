@@ -172,7 +172,7 @@ namespace Naispo.Tests
             for(int i=0;i<CooperativeCoinGame.CoinsPerRound;i++)
             {
                 Assert.That(IsVisible(Coin(i)),Is.False,"Versus must hide collection-mode stars.");
-                Assert.That(IsVisible(Coin(i).transform.Find("Warm halo").GetComponent<SpriteRenderer>()),Is.False);
+                Assert.That(IsVisible(game.CollectionHaloRenderer(i)),Is.False);
                 Assert.That(game.CoinVisibility(i),Is.Zero);
             }
             // Set a pending effect independently of its artwork so both reset paths are exercised.
@@ -184,6 +184,7 @@ namespace Naispo.Tests
             Assert.That(game.VersusState.LastHitter,Is.Zero);
             Assert.That(game.VersusState.Winner,Is.Zero);
             Assert.That(game.TeamScore,Is.Zero);
+            yield return WaitFor(() => game.CanAdvanceBall,3,"Returning to collection must finish the fresh buds' descent.");
             game.SetPaused(true);
             MoveBall(Coin(4).transform.position);
             yield return TwoFrames();
@@ -463,7 +464,7 @@ namespace Naispo.Tests
             Physics2D.SyncTransforms();
         }
 
-        SpriteRenderer Coin(int index) => game.transform.Find("Cooperative court/Shared coin "+(index+1)).GetComponent<SpriteRenderer>();
+        SpriteRenderer Coin(int index) => game.CollectionTargetRenderer(index);
         static bool IsVisible(SpriteRenderer renderer) => renderer.enabled && renderer.gameObject.activeInHierarchy && renderer.color.a>.001f;
 
         static IEnumerator TwoFrames()

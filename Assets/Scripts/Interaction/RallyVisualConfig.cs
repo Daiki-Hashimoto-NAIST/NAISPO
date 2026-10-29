@@ -51,8 +51,11 @@ namespace Naispo.Interaction
 
         [Header("Optional foreground replacements")]
         public Sprite ball;
+        [Tooltip("Legacy star artwork. The hanging-flower game uses Bud and Flower instead.")]
         public Sprite star;
+        [Tooltip("Closed hanging bud, centered with the vine joining from above. Transparent background.")]
         public Sprite bud;
+        [Tooltip("Open light flower, centered to match the bud. Transparent background; keep glow compact.")]
         public Sprite flower;
 
         [Header("Optional spell icons")]

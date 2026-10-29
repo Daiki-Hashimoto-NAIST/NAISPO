@@ -105,14 +105,13 @@ namespace Naispo.Tests
             var court = CreateCourt(config);
             var game = court.Game;
             Assert.That(game.UsesConfiguredBallSprite, Is.True);
-            Assert.That(game.UsesConfiguredStarSprite, Is.True);
             Assert.That(court.Ball.transform.localScale, Is.EqualTo(Vector3.one));
             Assert.That(court.Ball.GetComponent<CircleCollider2D>().radius, Is.EqualTo(.22f).Within(.0001f));
             Assert.That(game.BallLightRadius, Is.EqualTo(1.8f).Within(.0001f));
 
             AssertArtwork(config.ball, court.Ball.GetComponent<SpriteRenderer>(), .44f, .44f);
-            var star = RendererNamed(game.transform, "Shared coin 5");
-            AssertArtwork(config.star, star, .38f, .38f);
+            var target = game.CollectionTargetRenderer(4);
+            AssertArtwork(config.bud, target, .38f, .38f);
 
             // Inspect each real configured icon renderer, including both pickup
             // slots and the attached ball glyph. Activating artwork does not alter
@@ -131,22 +130,16 @@ namespace Naispo.Tests
 
             var garden = game.GardenPresentation;
             garden.SetVisible(true);
-            var bud = RendererNamed(garden.transform, "Closed bud 1");
-            AssertArtwork(config.bud, bud, .14f, .35f);
+            garden.StepPresentation(1.1f, false);
+            var bud = garden.BudRenderer(0);
+            AssertArtwork(config.bud, bud, .38f, .38f);
             Vector2 closedSize = SizeAlongSpriteAxes(bud);
-            garden.NotifyStarCollected(0, camera.transform.position);
-            garden.StepPresentation(.45f, false);
-            garden.StepPresentation(.30f, false);
+            garden.NotifyBudBloomed(0);
+            garden.StepPresentation(.7f, false);
             Assert.That(garden.IsAwake(0), Is.True);
-            AssertArtwork(config.bud, bud, .14f, .39f);
-            // The accepted design opens the full flower only after all nine stars,
-            // so the bloom geometry is measured on a completed round.
-            for (int i = 0; i < CooperativeCoinGame.CoinsPerRound; i++)
-                garden.NotifyStarCollected(i, camera.transform.position);
-            garden.StepPresentation(1.6f, true);
-            var flower = RendererNamed(garden.transform, "Flower 1");
+            var flower = garden.FlowerRenderer(0);
             Assert.That(flower.enabled, Is.True);
-            AssertArtwork(config.flower, flower, .30f, .55f);
+            AssertArtwork(config.flower, flower, .60f, .66f);
             Vector2 openSize = SizeAlongSpriteAxes(flower);
 
             // A second import of identical pixels with another PPU must be visually
@@ -154,28 +147,29 @@ namespace Naispo.Tests
             var alternateConfig = Configuration(true, pixelsPerUnit * 7);
             var alternate = CreateCourt(alternateConfig);
             var alternateGarden = alternate.Game.GardenPresentation;
-            var alternateBud = RendererNamed(alternateGarden.transform, "Closed bud 1");
+            alternateGarden.StepPresentation(1.1f, false);
+            var alternateBud = alternateGarden.BudRenderer(0);
             AssertSizeEqual(closedSize, SizeAlongSpriteAxes(alternateBud), "Closed bud size must ignore import PPU.");
-            for (int i = 0; i < CooperativeCoinGame.CoinsPerRound; i++)
-                alternateGarden.NotifyStarCollected(i, camera.transform.position);
-            alternateGarden.StepPresentation(1.6f, true);
-            AssertSizeEqual(openSize, SizeAlongSpriteAxes(RendererNamed(alternateGarden.transform, "Flower 1")),
+            alternateGarden.NotifyBudBloomed(0);
+            alternateGarden.StepPresentation(.7f, false);
+            AssertSizeEqual(openSize, SizeAlongSpriteAxes(alternateGarden.FlowerRenderer(0)),
                 "Bloomed flower size must ignore import PPU.");
             AssertOwnedScene(game.transform);
             AssertOwnedScene(alternate.Game.transform);
         }
 
         [Test]
-        public void BrightImportedBackgroundDoesNotRevealStarCoresOrHalosOutsideTheBallRadius()
+        public void BrightImportedBackgroundDoesNotRevealClosedBudsOrHalosOutsideTheBallRadius()
         {
             var config = Configuration(true, 41);
             var court = CreateCourt(config);
             var game = court.Game;
             game.SetPaused(true);
+            game.GardenPresentation.StepPresentation(1.1f, false);
             Assert.That(game.GardenPresentation.UsesConfiguredBackground, Is.True);
-            var star = RendererNamed(game.transform, "Shared coin 5");
-            var halo = RendererNamed(star.transform, "Warm halo");
-            Vector2 target = star.transform.position;
+            var bud = game.CollectionTargetRenderer(4);
+            var halo = game.CollectionHaloRenderer(4);
+            Vector2 target = game.CollectionTargetPosition(4);
 
             foreach (float radius in new[] { .5f, 1.8f, 4f })
             {
@@ -183,12 +177,12 @@ namespace Naispo.Tests
                 MoveBall(court.Ball, target + Vector2.up * (radius + .02f));
                 Invoke(game, "RefreshLighting");
                 Assert.That(game.CoinVisibility(4), Is.Zero);
-                Assert.That(IsVisible(star), Is.False, "A bright backdrop cannot reveal a distant star core.");
-                Assert.That(IsVisible(halo), Is.False, "A distant star's halo must also remain absent.");
+                Assert.That(IsVisible(bud), Is.False, "A bright backdrop cannot reveal a distant closed bud.");
+                Assert.That(IsVisible(halo), Is.False, "A distant bud's halo must also remain absent.");
 
                 MoveBall(court.Ball, target + Vector2.up * (radius * .70f));
                 Invoke(game, "RefreshLighting");
-                Assert.That(IsVisible(star), Is.True, "The same imported star must return inside the real light radius.");
+                Assert.That(IsVisible(bud), Is.True, "The same imported bud must return inside the real light radius.");
                 Assert.That(IsVisible(halo), Is.True);
             }
             Assert.That(court.Ball.transform.localScale, Is.EqualTo(Vector3.one));
@@ -196,26 +190,36 @@ namespace Naispo.Tests
         }
 
         [Test]
-        public void StarLightTransfersArriveAtTheBudInItsOwnersOffsetScene()
+        public void OffsetCourtKeepsBloomsOnContactCentersAndRetractsEveryVineAboveTheViewport()
         {
             var court = CreateCourt(Configuration(false, 64));
             var garden = court.Game.GardenPresentation;
             Assert.That(camera.transform.position.x, Is.Not.EqualTo(0),
                 "This regression requires a non-zero court offset.");
-            foreach (int index in new[] { 0, 8 })
+            garden.StepPresentation(1.1f, false);
+            Assert.That(garden.TargetsReady, Is.True);
+            Assert.That(garden.GetComponentsInChildren<Collider2D>(true), Is.Empty);
+            for (int index = 0; index < RallyGardenWorld.BudCount; index++)
             {
-                var bud = RendererNamed(garden.transform, "Closed bud " + (index + 1));
-                Vector2 origin = camera.transform.position;
-                garden.NotifyStarCollected(index, origin);
-                garden.StepPresentation(.44f, false);
-                var mote = RendererNamed(garden.transform, "Magic mote " + (index + 1));
-                Assert.That(mote.enabled, Is.True);
-                Assert.That(Vector2.Distance(mote.transform.position, bud.transform.parent.position), Is.LessThan(.10f),
-                    "The almost-arrived mote must target the bud's world location, not its local x/y coordinates.");
-                garden.StepPresentation(.02f, false);
+                Vector2 target = court.Game.CollectionTargetPosition(index);
+                Assert.That(Vector2.Distance(garden.TargetWorldPosition(index), target), Is.LessThan(.001f));
+                Assert.That(Vector2.Distance(garden.BudRenderer(index).bounds.center, target), Is.LessThan(.001f));
+                garden.NotifyBudBloomed(index);
+                garden.NotifyBudBloomed(index);
                 Assert.That(garden.IsAwake(index), Is.True);
-                Assert.That(mote.enabled, Is.False);
             }
+            garden.StepPresentation(.7f, false);
+            Assert.That(garden.AwakenedBudCount, Is.EqualTo(RallyGardenWorld.BudCount), "Repeated notification must not double-count flowers.");
+            for (int index = 0; index < RallyGardenWorld.BudCount; index++)
+                Assert.That(Vector2.Distance(garden.FlowerRenderer(index).bounds.center,
+                    court.Game.CollectionTargetPosition(index)), Is.LessThan(.001f));
+            garden.StepPresentation(2.2f, true);
+            Assert.That(garden.RetractionProgress, Is.EqualTo(1).Within(.001f));
+            Assert.That(garden.TargetsReady, Is.False);
+            for (int index = 0; index < RallyGardenWorld.BudCount; index++)
+                Assert.That(garden.FlowerRenderer(index).bounds.min.y,
+                    Is.GreaterThan(camera.transform.position.y + camera.orthographicSize),
+                    "The entire old flower must leave through the top before replacement, including in an offset court.");
             AssertOwnedScene(garden.transform);
         }
 

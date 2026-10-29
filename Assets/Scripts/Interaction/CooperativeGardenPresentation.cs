@@ -14,7 +14,7 @@ namespace Naispo.Interaction
 
         void BuildGardenPresentation()
         {
-            // Snapshot only the structural court, before balls, stars and items are added.
+            // Snapshot only the structural court, before flowers and items are added.
             courtArtwork=arenaRoot.GetComponentsInChildren<SpriteRenderer>();
             garden=CreateChild("Garden atmosphere",arenaRoot.transform).AddComponent<RallyGardenWorld>();
             garden.Initialize(halfWidth,ArenaFloor,cameraView,visualConfig);
@@ -109,7 +109,7 @@ namespace Naispo.Interaction
                 Fill(new Rect(1134,680,104,38),backing);
             }
             GUI.enabled=!settingsOpen;
-            if(GUI.Button(new Rect(42,682,150,34),IsVersus ? "対戦  ▾" : "星あつめ  ▾",quietButtonStyle))
+            if(GUI.Button(new Rect(42,682,150,34),IsVersus ? "対戦  ▾" : "光の花  ▾",quietButtonStyle))
             { settingsOpen=true;ApplySimulationState(); }
             var pauseRect=new Rect(1136,682,44,34);
             if(GUI.Button(pauseRect,GUIContent.none,quietButtonStyle))SetPaused(!paused);

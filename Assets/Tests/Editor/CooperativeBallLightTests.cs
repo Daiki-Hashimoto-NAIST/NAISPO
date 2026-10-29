@@ -38,18 +38,28 @@ namespace Naispo.Tests
             SceneManager.MoveGameObjectToScene(gameObject, scene);
             game = gameObject.AddComponent<CooperativeCoinGame>();
             game.Configure(ball, camera);
+            // The serve starts close enough to the edge bud to collect it if
+            // one active frame runs before the test coroutine resumes. Keep the
+            // setup dark, then reset the swept path at a clear parking position.
+            game.BallLightEnabled = false;
+            yield return WaitFor(() => game.CanAdvanceBall, 3, "The first buds must settle before inspecting their light.");
+            MoveBall(new Vector2(0, -2));
+            game.BallLightEnabled = true;
+            yield return TwoFrames();
+            Assert.That(game.CollectedCount, Is.Zero, "Every lighting test must begin with untouched buds.");
         }
 
         [UnityTest]
-        public IEnumerator OnlyLitCoinsAndTheirHalosAreVisibleWithoutAnArcGuide()
+        public IEnumerator OnlyLitBudsAndTheirHalosAreVisibleWithoutAnArcGuide()
         {
             Assert.That(game.BallLightEnabled, Is.True);
             Assert.That(game.BallLightRadius, Is.EqualTo(1.8f).Within(.001f));
             AssertHidden(4, "The center coin is outside the starting serve's light.");
             AssertBallLight(true);
-            foreach (var line in game.GetComponentsInChildren<LineRenderer>(true))
-                Assert.That(line.enabled && line.gameObject.activeInHierarchy, Is.False,
-                    "A persistent arc would reveal hidden coin positions.");
+            Assert.That(game.transform.Find("Cooperative court/Coin arc"), Is.Null,
+                "A persistent arc cannot connect and reveal hidden buds.");
+            Assert.That(game.GardenPresentation.GetComponentsInChildren<Collider2D>(true), Is.Empty,
+                "Decorative vines cannot become obstacles for the ball.");
 
             game.SetPaused(true);
             var coin = Coin(4);
@@ -145,7 +155,7 @@ namespace Naispo.Tests
         }
 
         [UnityTest]
-        public IEnumerator NextRoundRestoresOnlyCoinsInsideTheNewServeLight()
+        public IEnumerator NextRoundArrivesThenRevealsOnlyBudsInsideTheNewServeLight()
         {
             yield return WaitFor(() => !game.WaitingToServe, 3, "The initial serve must start.");
             for (int i = 0; i < CooperativeCoinGame.CoinsPerRound; i++)
@@ -158,14 +168,14 @@ namespace Naispo.Tests
             yield return WaitFor(() => game.Round == 2, 4, "A completed arc must advance to the next round.");
             Assert.That(game.CollectedCount, Is.Zero);
             AssertHidden(4, "The new arc must not expose distant coins after the completion animation.");
+            yield return WaitFor(() => game.GardenPresentation.TargetsReady, 3, "Fresh buds must descend before checking the new layout.");
             Assert.That(IsVisible(Coin(CooperativeCoinGame.CoinsPerRound - 1)), Is.True,
                 "The alternating right serve must reveal its nearby coin again.");
         }
 
-        SpriteRenderer Coin(int index) => game.transform.Find("Cooperative court/Shared coin " + (index + 1))
-            .GetComponent<SpriteRenderer>();
+        SpriteRenderer Coin(int index) => game.CollectionTargetRenderer(index);
 
-        SpriteRenderer Halo(int index) => Coin(index).transform.Find("Warm halo").GetComponent<SpriteRenderer>();
+        SpriteRenderer Halo(int index) => game.CollectionHaloRenderer(index);
 
         static bool IsVisible(SpriteRenderer renderer) => renderer.enabled && renderer.gameObject.activeInHierarchy && renderer.color.a > .001f;
 
