@@ -3,7 +3,7 @@ using UnityEngine;
 namespace Naispo.Interaction
 {
     /// <summary>
-    /// Local motion masks traced over the supplied 1586 x 992 glasshouse painting.
+    /// Local candle masks traced over the supplied 1586 x 992 glasshouse painting.
     /// Coordinates refer to the wick, measured from the top left of the sprite crop.
     /// The source image stays untouched; the caller owns the returned linear texture.
     /// </summary>
@@ -68,6 +68,63 @@ namespace Naispo.Interaction
             var texture = new Texture2D(width, height, TextureFormat.RGBA32, false, true)
             {
                 name = "Glasshouse candle motion mask",
+                hideFlags = HideFlags.DontSave,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+            return texture;
+        }
+
+        /// <summary>
+        /// Red marks the painted flame core; green marks its compact surrounding light.
+        /// Only traced candles emit: gold frames, moonlight and other bright details do not.
+        /// The mask uses the sprite's full texture UVs and stays black outside its crop.
+        /// </summary>
+        public static Texture2D CreateEmissionMask(Sprite sprite)
+        {
+            if (sprite == null || sprite.texture == null || sprite.packed) return null;
+            int width = sprite.texture.width, height = sprite.texture.height;
+            Rect crop = sprite.rect;
+            if (crop.width <= 0 || crop.height <= 0) return null;
+            var pixels = new Color32[width * height];
+            for (int i = 0; i < Flames.Length; i++)
+            {
+                Vector3 flame = Flames[i];
+                float radius = flame.z * 3.1f;
+                float centerY = flame.y - flame.z * .55f;
+                int xMin = Mathf.Max(0, Mathf.FloorToInt(crop.x),
+                    Mathf.FloorToInt(crop.x + (flame.x - radius) / 1586 * crop.width));
+                int xMax = Mathf.Min(width - 1, Mathf.CeilToInt(crop.xMax) - 1,
+                    Mathf.CeilToInt(crop.x + (flame.x + radius) / 1586 * crop.width));
+                int yMin = Mathf.Max(0, Mathf.FloorToInt(crop.y),
+                    Mathf.FloorToInt(crop.yMax - (centerY + radius) / 992 * crop.height));
+                int yMax = Mathf.Min(height - 1, Mathf.CeilToInt(crop.yMax) - 1,
+                    Mathf.CeilToInt(crop.yMax - (centerY - radius) / 992 * crop.height));
+                for (int y = yMin; y <= yMax; y++)
+                for (int x = xMin; x <= xMax; x++)
+                {
+                    if (x + .5f < crop.x || x + .5f >= crop.xMax ||
+                        y + .5f < crop.y || y + .5f >= crop.yMax) continue;
+                    float dx = ((x + .5f - crop.x) / crop.width * 1586 - flame.x) / flame.z;
+                    float up = (flame.y - (crop.yMax - y - .5f) / crop.height * 992) / flame.z;
+                    float coreDistance = Mathf.Sqrt(dx * dx / (.42f * .42f) +
+                        (up - .55f) * (up - .55f) / (.95f * .95f));
+                    float core = Mathf.SmoothStep(0, 1, Mathf.Clamp01((1 - coreDistance) * 1.8f));
+                    float lightDistance = Mathf.Sqrt(dx * dx + (up - .55f) * (up - .55f));
+                    float spill = Mathf.Pow(Mathf.Clamp01(1 - lightDistance / 3.1f), 2);
+                    int index = y * width + x;
+                    Color32 previous = pixels[index];
+                    // Max avoids overexposure where several nearby candles share a glow.
+                    pixels[index] = new Color32(
+                        (byte)Mathf.Max(previous.r, Mathf.RoundToInt(core * 255)),
+                        (byte)Mathf.Max(previous.g, Mathf.RoundToInt(spill * 255)), 0, 255);
+                }
+            }
+            var texture = new Texture2D(width, height, TextureFormat.RGBA32, false, true)
+            {
+                name = "Glasshouse candle emission mask",
                 hideFlags = HideFlags.DontSave,
                 wrapMode = TextureWrapMode.Clamp,
                 filterMode = FilterMode.Bilinear

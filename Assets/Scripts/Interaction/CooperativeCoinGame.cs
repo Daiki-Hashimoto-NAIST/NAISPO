@@ -182,7 +182,7 @@ namespace Naispo.Interaction
             {
                 float distance=Vector2.Distance(new Vector2(x,y),new Vector2(63.5f,63.5f))/64;
                 // Fall off toward the edge without drawing outside the reveal mask.
-                float radiance=Mathf.Pow(Mathf.Clamp01(1-distance),2)*RevealAmount(distance,1);
+                float radiance=Mathf.Pow(Mathf.Clamp01(1-distance),4)*RevealAmount(distance,1);
                 lightTexture.SetPixel(x,y,new Color(1,1,1,radiance));
             }
             lightTexture.Apply();
@@ -305,7 +305,7 @@ namespace Naispo.Interaction
         {
             ballLight=CreateChild("Ball light",arenaRoot.transform).AddComponent<SpriteRenderer>();
             ballLight.sprite=lightSprite; ballLight.sortingOrder=4;
-            ballLight.color=new Color(1,.94f,.74f,.014f);
+            ballLight.color=new Color(1,.94f,.74f,.004f);
             ballCorona=CreateChild("Ball corona",arenaRoot.transform).AddComponent<SpriteRenderer>();
             ballCorona.sprite=haloSprite; ballCorona.sortingOrder=8;
             ballCorona.color=IsVersus ? new Color(.73f,.88f,1,.30f) : new Color(1,.96f,.85f,.38f);
@@ -471,7 +471,7 @@ namespace Naispo.Interaction
             bool ballVisible=BallPresentationVisible;
             Color gold=visualConfig!=null?visualConfig.ballGold:new Color(.95f,.79f,.46f);
             if(IsVersus && ActiveSpell!=RallySpell.None) gold=SpellColor(ActiveSpell);
-            ballLight.color=new Color(gold.r,gold.g,gold.b,.014f);
+            ballLight.color=new Color(gold.r,gold.g,gold.b,.004f);
             ballCorona.color=new Color(gold.r,gold.g,gold.b,IsVersus?.30f:.38f);
             ballLight.transform.position=ball.transform.position;
             ballLight.transform.localScale=Vector3.one*(ballLightRadius*2);

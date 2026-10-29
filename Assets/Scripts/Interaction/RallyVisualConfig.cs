@@ -49,6 +49,12 @@ namespace Naispo.Interaction
         [Tooltip("Reduces bright painted highlights without dimming gameplay sprites or changing the ball light.")]
         [Range(0, 1)] public float backgroundHighlightCompression = .65f;
 
+        [Header("Glasshouse night lighting")]
+        [Tooltip("Ambient exposure for the collection room only. Gameplay lights and the dueling hall keep their own brightness.")]
+        [Range(.05f, 1)] public float gardenAmbientExposure = .22f;
+        [Tooltip("Exposure at traced candle flames in the glasshouse painting. Nearby candlelight uses a softer falloff.")]
+        [Range(1, 2)] public float gardenCandleExposure = 1.35f;
+
         [Header("Optional foreground replacements")]
         public Sprite ball;
         [Tooltip("Legacy star artwork. The hanging-flower game uses Bud and Flower instead.")]

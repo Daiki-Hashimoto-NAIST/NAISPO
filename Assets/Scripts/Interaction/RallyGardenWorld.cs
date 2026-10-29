@@ -235,6 +235,13 @@ namespace Naispo.Interaction
                 if (material != null)
                 {
                     background.sharedMaterial = material;
+                    material.SetFloat("_AmbientExposure", Mathf.Clamp(config.gardenAmbientExposure, .05f, 1f));
+                    material.SetFloat("_EmissionExposure", Mathf.Clamp(config.gardenCandleExposure, 1f, 2f));
+                    if (config.collectionBackgroundDepth == RallyBackdropDepthProfile.Glasshouse)
+                    {
+                        var emission = Own(RallyCandleArtwork.CreateEmissionMask(backdropSprite));
+                        if (emission != null) material.SetTexture("_EmissionMask", emission);
+                    }
                     if (config.animateGlasshouseCandles &&
                         config.collectionBackgroundDepth == RallyBackdropDepthProfile.Glasshouse)
                     {
@@ -477,7 +484,7 @@ namespace Naispo.Interaction
             Vector2 anchor = new Vector2(anchorX, top);
             float sway = Mathf.Sin(presentationTime * .72f + index * 1.4f) * .065f;
             Color foliage = config != null ? config.gardenFoliage : new Color(.13f, .31f, .24f);
-            Color stemColor = Color.Lerp(foliage * 1.25f, new Color(.48f, .65f, .43f), open * .25f);
+            Color stemColor = Color.Lerp(foliage * .88f, new Color(.34f, .46f, .30f), open * .25f);
             Vector2 previous = anchor;
             for (int segment = 0; segment < VineSegments; segment++)
             {
@@ -513,7 +520,7 @@ namespace Naispo.Interaction
                 float lowerFade = Mathf.SmoothStep(0, 1, Mathf.Clamp01((distanceFromTip - .18f) / .95f));
                 // The leaf texture already carries the foliage palette. Keep
                 // that color instead of multiplying it by a second dark green.
-                view.color = new Color(.95f, 1f, .90f,
+                view.color = new Color(.67f, .74f, .63f,
                     .62f * Mathf.Lerp(lowerFade, 1, reveal));
             }
         }

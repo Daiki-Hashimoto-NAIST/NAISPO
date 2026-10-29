@@ -14,6 +14,9 @@ Shader "Naispo/PaintedBackdropSoftening"
         [HideInInspector] _CandleMotionScale("Flame image scale", Vector) = (0,0,0,0)
         [HideInInspector] _CandleStrength("Painted candles enabled", Float) = 0
         [HideInInspector] _CandleTime("Garden presentation clock", Float) = 0
+        [HideInInspector] _AmbientExposure("Room ambient exposure", Float) = 1
+        [HideInInspector] _EmissionMask("Painted candle light", 2D) = "black" {}
+        [HideInInspector] _EmissionExposure("Candle exposure", Float) = 1.35
     }
     SubShader
     {
@@ -36,6 +39,8 @@ Shader "Naispo/PaintedBackdropSoftening"
             SAMPLER(sampler_BlurredTex);
             TEXTURE2D(_CandleMask);
             SAMPLER(sampler_CandleMask);
+            TEXTURE2D(_EmissionMask);
+            SAMPLER(sampler_EmissionMask);
 
             CBUFFER_START(UnityPerMaterial)
                 half4 _Color;
@@ -45,6 +50,7 @@ Shader "Naispo/PaintedBackdropSoftening"
                 float4 _CandleMotionScale;
                 float _CandleTime;
                 half _CandleStrength;
+                half _AmbientExposure, _EmissionExposure;
             CBUFFER_END
 
             struct Attributes
@@ -102,10 +108,16 @@ Shader "Naispo/PaintedBackdropSoftening"
                 color *= candleLight;
                 half luminance = dot(color, half3(0.2126h, 0.7152h, 0.0722h));
                 color = lerp(luminance.xxx, color, _Saturation);
-                // Compress only brighter painted details. Shadows keep their room
-                // structure, while the brightest candle cannot compete with a ball.
+                // Compress brighter painted details before separating room ambience
+                // from the few authored light sources.
                 half peak = max(color.r, max(color.g, color.b));
                 color *= _Brightness / (1 + max(0.0h, peak - 0.25h) * _HighlightCompression);
+                // Follow the same warped UV as the flame, without widening its light
+                // to other bright painting details or changing the source alpha.
+                half2 emission = SAMPLE_TEXTURE2D(_EmissionMask, sampler_EmissionMask,
+                    clamp(uv, _UvRect.xy, _UvRect.zw)).rg;
+                half localLight = saturate(emission.r + emission.g * .38h * (1 - emission.r));
+                color *= lerp(_AmbientExposure, _EmissionExposure, localLight);
                 // Preserve the source alpha instead of spreading its silhouette.
                 return half4(color * input.color.rgb, center.a * input.color.a);
             }
