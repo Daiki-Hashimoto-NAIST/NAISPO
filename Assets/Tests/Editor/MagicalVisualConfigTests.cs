@@ -217,9 +217,11 @@ namespace Naispo.Tests
             Assert.That(garden.RetractionProgress, Is.EqualTo(1).Within(.001f));
             Assert.That(garden.TargetsReady, Is.False);
             for (int index = 0; index < RallyGardenWorld.BudCount; index++)
-                Assert.That(garden.FlowerRenderer(index).bounds.min.y,
-                    Is.GreaterThan(camera.transform.position.y + camera.orthographicSize),
-                    "The entire old flower must leave through the top before replacement, including in an offset court.");
+            foreach (var renderer in garden.FlowerRenderer(index).transform.parent.GetComponentsInChildren<Renderer>(true))
+                if (renderer.enabled)
+                    Assert.That(renderer.bounds.min.y,
+                        Is.GreaterThan(camera.transform.position.y + camera.orthographicSize),
+                        "Every flower layer, including its glow, must leave through the top before replacement: " + renderer.name);
             AssertOwnedScene(garden.transform);
         }
 

@@ -27,6 +27,8 @@ namespace Naispo.Interaction
         readonly Transform[] targets = new Transform[BudCount];
         readonly SpriteRenderer[] buds = new SpriteRenderer[BudCount];
         readonly SpriteRenderer[] flowers = new SpriteRenderer[BudCount];
+        readonly SpriteRenderer[] flowerRadiance = new SpriteRenderer[BudCount];
+        readonly SpriteRenderer[] flowerHearts = new SpriteRenderer[BudCount];
         readonly SpriteRenderer[] halos = new SpriteRenderer[BudCount];
         readonly SpriteRenderer[,] vines = new SpriteRenderer[BudCount, VineSegments];
         readonly SpriteRenderer[,] leaves = new SpriteRenderer[BudCount, LeavesPerVine];
@@ -42,6 +44,8 @@ namespace Naispo.Interaction
         Camera gardenCamera;
         Transform backdrop, veil;
         Sprite backdropSprite, veilSprite, lineSprite, glowSprite, budSprite, flowerSprite, vineLeafSprite;
+        Sprite flowerRadianceSprite;
+        Material flowerEmissionMaterial, flowerBloomMaterial;
         Material candleMaterial;
         static readonly int CandleTime = Shader.PropertyToID("_CandleTime");
         bool backdropConfigured, visible = true, destroyed;
@@ -100,6 +104,10 @@ namespace Naispo.Interaction
             flowerSprite = Normalized(config != null ? config.flower : null, FlowerWorldSize, "Configured light flower") ??
                 Normalized(CreateOwnedTextureSprite(RallyHangingFlowerArtwork.CreateFlowerTexture(), "Procedural light flower"), FlowerWorldSize,
                     "Procedural light flower");
+            flowerEmissionMaterial = Own(RallyFlowerRadianceArtwork.CreateEmissionMaterial(1.45f));
+            flowerBloomMaterial = Own(RallyFlowerRadianceArtwork.CreateBloomMaterial(1.8f));
+            flowerRadianceSprite = Own(RallyFlowerRadianceArtwork.CreateBloomSprite(flowerSprite, out var flowerBloomTexture));
+            Own(flowerBloomTexture);
             vineLeafSprite = CreateOwnedTextureSprite(CreateLeafTexture(), "Hanging vine leaf");
 
             BuildBackdrop(camera);
@@ -398,9 +406,19 @@ namespace Naispo.Interaction
                     budSprite, Color.clear, 7, simple: true);
                 flowers[i] = RallySceneryArtwork.AddRenderer(root.transform, "Flower " + (i + 1),
                     flowerSprite, Color.clear, 8, simple: true);
+                if (flowerEmissionMaterial != null) flowers[i].sharedMaterial = flowerEmissionMaterial;
+                flowerRadiance[i] = RallySceneryArtwork.AddRenderer(root.transform, "Flower radiance " + (i + 1),
+                    flowerRadianceSprite, Color.clear, 6, simple: true);
+                flowerHearts[i] = RallySceneryArtwork.AddRenderer(root.transform, "Flower heart " + (i + 1),
+                    glowSprite, Color.clear, 9, simple: true);
+                if (flowerBloomMaterial != null)
+                {
+                    flowerRadiance[i].sharedMaterial = flowerHearts[i].sharedMaterial = flowerBloomMaterial;
+                }
                 halos[i] = RallySceneryArtwork.AddRenderer(root.transform, "Bud halo " + (i + 1),
                     glowSprite, Color.clear, 6, simple: true);
                 buds[i].enabled = flowers[i].enabled = halos[i].enabled = false;
+                flowerRadiance[i].enabled = flowerHearts[i].enabled = false;
                 for (int segment = 0; segment < VineSegments; segment++)
                     vines[i, segment] = RallySceneryArtwork.AddRenderer(scenery.transform,
                         "Vine " + (i + 1) + " segment " + segment, lineSprite, Color.clear, -8);
@@ -458,10 +476,22 @@ namespace Naispo.Interaction
             flowers[index].transform.localRotation = config != null && config.flower != null
                 ? Quaternion.identity
                 : Quaternion.Euler(0, 0, index * 19f + roundIndex * 7f - (1 - open) * 25f);
-            halos[index].enabled = reveal > .001f;
-            halos[index].color = new Color(tint.r, tint.g, tint.b,
-                reveal * (.12f + open * .12f + glowBeat * .16f));
-            halos[index].transform.localScale = Vector3.one * (.42f + open * .30f + glowBeat * .12f);
+            // Only opened flowers emit. A compact petal-shaped bloom and white
+            // heart add radiance without revealing other closed buds nearby.
+            float breath = .96f + .04f * Mathf.Sin(presentationTime * 1.9f + index * .73f);
+            float openingFlash = Mathf.Exp(-Mathf.Pow((wakeAge[index] - .30f) / .19f, 2)) * open;
+            flowerRadiance[index].enabled = open > .001f && flowerRadianceSprite != null;
+            flowerRadiance[index].color = new Color(tint.r, tint.g, tint.b,
+                open * Mathf.Clamp01(.72f * breath + openingFlash * .22f + glowBeat * .18f));
+            flowerRadiance[index].transform.localScale = Vector3.one * (unfurl + openingFlash * .06f + glowBeat * .08f);
+            flowerRadiance[index].transform.localRotation = flowers[index].transform.localRotation;
+            flowerHearts[index].enabled = open > .001f;
+            flowerHearts[index].color = new Color(1f, .99f, .90f, open * (.80f + .12f * openingFlash));
+            flowerHearts[index].transform.localScale = Vector3.one * (.25f + openingFlash * .04f + glowBeat * .03f);
+            float budHalo = reveal * .12f * (1 - open);
+            halos[index].enabled = budHalo > .001f;
+            halos[index].color = new Color(tint.r, tint.g, tint.b, budHalo);
+            halos[index].transform.localScale = Vector3.one * .42f;
             ApplyVine(index, position + Vector2.up * .16f, top, reveal, open);
         }
 

@@ -75,6 +75,10 @@ namespace Naispo.Tests
             Assert.That(IsVisible(game.CollectionTargetRenderer(4)), Is.False,
                 "A completed flower must not reveal other buds.");
             Assert.That(IsVisible(game.CollectionHaloRenderer(4)), Is.False);
+            Assert.That(TargetRenderer(4, "Flower radiance").enabled, Is.False,
+                "Another flower's radiance must not reveal an unopened target.");
+            Assert.That(TargetRenderer(4, "Flower heart").enabled, Is.False,
+                "An unopened target must not show an emissive center outside the ball light.");
             for (int i = 1; i < RallyGardenWorld.BudCount; i++)
                 Assert.That(Garden.FlowerBloom(i), Is.Zero);
         }
@@ -199,13 +203,26 @@ namespace Naispo.Tests
                 yield return Frames(2);
                 float bloom = Garden.FlowerBloom(0);
                 var flower = Garden.FlowerRenderer(0);
-                Vector3 scale = flower.transform.localScale;
-                Color color = flower.color;
+                var layers = new[] { flower, TargetRenderer(0, "Flower radiance"), TargetRenderer(0, "Flower heart") };
+                var scales = new Vector3[layers.Length];
+                var colors = new Color[layers.Length];
+                var rotations = new Quaternion[layers.Length];
+                for (int i = 0; i < layers.Length; i++)
+                {
+                    scales[i] = layers[i].transform.localScale;
+                    colors[i] = layers[i].color;
+                    rotations[i] = layers[i].transform.localRotation;
+                }
                 Assert.That(bloom, Is.LessThan(1));
                 yield return Frames(35);
                 Assert.That(Garden.FlowerBloom(0), Is.EqualTo(bloom).Within(.0001f), blocker + ": opening froze.");
-                Assert.That(flower.transform.localScale, Is.EqualTo(scale), blocker + ": size froze.");
-                Assert.That(flower.color, Is.EqualTo(color), blocker + ": color froze.");
+                for (int i = 0; i < layers.Length; i++)
+                {
+                    string layer = blocker + ": " + layers[i].name;
+                    Assert.That(layers[i].transform.localScale, Is.EqualTo(scales[i]), layer + " size froze.");
+                    Assert.That(layers[i].color, Is.EqualTo(colors[i]), layer + " color froze.");
+                    Assert.That(layers[i].transform.localRotation, Is.EqualTo(rotations[i]), layer + " rotation froze.");
+                }
                 SetSuspended(blocker, false);
                 yield return Frames(35);
                 Assert.That(Garden.FlowerBloom(0), Is.EqualTo(1).Within(.001f));
@@ -329,6 +346,16 @@ namespace Naispo.Tests
 
         static bool IsVisible(SpriteRenderer renderer) =>
             renderer.enabled && renderer.gameObject.activeInHierarchy && renderer.color.a > .001f;
+
+        SpriteRenderer TargetRenderer(int index, string prefix)
+        {
+            string name = prefix + " " + (index + 1);
+            Transform target = Garden.FlowerRenderer(index).transform.parent.Find(name);
+            Assert.That(target, Is.Not.Null, "Missing flower layer: " + name);
+            var renderer = target.GetComponent<SpriteRenderer>();
+            Assert.That(renderer, Is.Not.Null, "Missing flower renderer: " + name);
+            return renderer;
+        }
 
         void MoveBall(Vector2 position)
         {
