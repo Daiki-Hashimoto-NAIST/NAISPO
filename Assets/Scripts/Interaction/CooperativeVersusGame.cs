@@ -59,6 +59,7 @@ namespace Naispo.Interaction
         public RallySpell ActiveSpell => versus.ActiveSpell;
         public int SpellOwner => versus.SpellOwner;
         public float SpellSecondsRemaining => versus.SpellSecondsRemaining;
+        public RallySpell PendingSpell(int playerSide) => versus.PendingSpell(playerSide);
         public int PickupCount
         {
             get
@@ -92,31 +93,39 @@ namespace Naispo.Interaction
             RefreshVersusArtwork();
         }
 
-        public bool TryActivateSpell(RallySpell spell)
+        public bool TryCollectSpell(RallySpell spell)
         {
             if (!IsVersus || !CanAdvanceBall || spell == RallySpell.None) return false;
-            if (!versus.TryActivateSpell(spell)) return false;
-            if (spell == RallySpell.Light) BeginLightWarning();
-            else EndLightPhase();
-            return true;
+            // Picking up another item changes only this player's held slot. The
+            // shared ball keeps its current flight, color and any active spell.
+            return versus.TryCollectSpell(spell);
         }
 
-        public Vector2 ApplyPendingSpellToRebound(Vector2 rebound)
+        // Retained for callers of the former immediate-pickup API.
+        public bool TryActivateSpell(RallySpell spell) => TryCollectSpell(spell);
+
+        public Vector2 ApplyPendingSpellToRebound(Vector2 rebound, int playerSide)
         {
-            if (!IsVersus || rebound.sqrMagnitude <= 0) return rebound;
-            return rebound * versus.ConsumeSpellMultiplier();
+            if (!IsVersus || !CanAdvanceBall || rebound.sqrMagnitude <= 0 ||
+                !float.IsFinite(rebound.x) || !float.IsFinite(rebound.y) ||
+                (ball != null && ball.IsInBarrierImpact)) return rebound;
+            RallySpell spell = versus.ReleaseSpellForRebound(playerSide);
+            if (spell == RallySpell.None) return rebound;
+            if (spell == RallySpell.Light) BeginLightWarning();
+            else EndLightPhase();
+            return rebound * RallyVersusState.SpellMultiplier(spell);
         }
 
         internal void RegisterBarrierHit(int playerSide)
         {
-            if (!IsVersus || !CanAdvanceBall) return;
+            if (!IsVersus || !CanAdvanceBall || (playerSide != -1 && playerSide != 1)) return;
             versus.RegisterBarrierHit(playerSide);
+            EndLightPhase();
             if (!pickupArmed)
             {
                 pickupArmed = true;
                 pickupSpawnDelay = PickupFirstDelay;
             }
-            CancelLightForContact();
         }
 
         void BuildVersusArtwork()
@@ -311,9 +320,9 @@ namespace Naispo.Interaction
             {
                 var entry = pickupSlots[pickupSweeps[i].Slot];
                 if (!entry.Active) continue;
-                if (TryActivateSpell(entry.Spell))
+                if (TryCollectSpell(entry.Spell))
                 {
-                    if (battleEffects != null) battleEffects.Pickup(entry.Position, versus.SpellOwner);
+                    if (battleEffects != null) battleEffects.Pickup(entry.Position, versus.LastHitter);
                     entry.Active = false;
                     entry.Age = 0;
                 }

@@ -76,10 +76,17 @@ namespace Naispo.Tests
         }
 
         [UnityTest]
-        public IEnumerator FireAndClockTintTheCoreAndUseAFixedTrailPoolUntilConsumed()
+        public IEnumerator FireAndClockWaitInHandThenTintTheirReleasedShotsUntilTheNextContact()
         {
             int rendererCount = EffectsRenderers().Length;
-            Assert.That(game.TryActivateSpell(RallySpell.Fireball), Is.True);
+            Assert.That(game.TryCollectSpell(RallySpell.Fireball), Is.True);
+            yield return Travel(6);
+            Assert.That(game.PendingSpell(-1), Is.EqualTo(RallySpell.Fireball));
+            Assert.That(game.ActiveSpell, Is.EqualTo(RallySpell.None));
+            Assert.That(game.SpellBallEffects.ActiveParticleCount, Is.Zero,
+                "A held item must not tint the current shot or emit its trail before its owner returns it.");
+            AssertOrdinaryCore();
+            game.ApplyPendingSpellToRebound(Vector2.right * 5, -1);
             yield return Travel(12);
             Color fire = BallView.color;
             Assert.That(fire.r, Is.GreaterThan(fire.b + .1f), "Fire must read as a warm ball core.");
@@ -89,7 +96,16 @@ namespace Naispo.Tests
                 "A running tail must recycle its renderer pool instead of adding objects every frame.");
             Assert.That(game.SpellBallEffects.ActiveParticleCount, Is.InRange(1, 36));
 
-            Assert.That(game.TryActivateSpell(RallySpell.Timer), Is.True);
+            Assert.That(game.TryCollectSpell(RallySpell.Timer), Is.True);
+            yield return Travel(6);
+            Assert.That(game.PendingSpell(-1), Is.EqualTo(RallySpell.Timer));
+            Assert.That(game.ActiveSpell, Is.EqualTo(RallySpell.Fireball),
+                "Collecting a new item must leave the already-released shot's effect in place.");
+            Assert.That(BallView.color.r, Is.GreaterThan(BallView.color.b + .1f));
+            Vector2 incomingReturn = new Vector2(3, 4);
+            Vector2 modifiedReturn = game.ApplyPendingSpellToRebound(incomingReturn, -1);
+            Assert.That(modifiedReturn.magnitude,
+                Is.EqualTo(incomingReturn.magnitude * RallyVersusState.TimerMultiplier).Within(.001f));
             yield return Travel(12);
             Color clock = BallView.color;
             Assert.That(clock.b, Is.GreaterThan(clock.r + .1f), "The clock must read as a cool ball core.");
@@ -98,21 +114,20 @@ namespace Naispo.Tests
                 "Replacing Fire must remove its wisps and leave only the short clock afterimages.");
             Assert.That(EffectsRenderers().Length, Is.EqualTo(rendererCount));
 
-            Vector2 incomingReturn = new Vector2(3, 4);
-            Vector2 modifiedReturn = game.ApplyPendingSpellToRebound(incomingReturn);
-            Assert.That(modifiedReturn.magnitude,
-                Is.EqualTo(incomingReturn.magnitude * RallyVersusState.TimerMultiplier).Within(.001f));
+            Assert.That(game.PendingSpell(-1), Is.EqualTo(RallySpell.None));
+            HitAndRelease();
+            MoveBall(new Vector2(-6, 3));
             yield return Frames(2);
             Assert.That(game.ActiveSpell, Is.EqualTo(RallySpell.None));
             Assert.That(game.SpellBallEffects.ActiveParticleCount, Is.Zero,
-                "A consumed speed spell must not leave an obsolete tail behind.");
+                "The next accepted contact must clear the previous shot's obsolete trail.");
             AssertOrdinaryCore();
         }
 
         [UnityTest]
         public IEnumerator PauseTrackingLossAndSettingsFreezeBothTrailTimeAndItsPose()
         {
-            Assert.That(game.TryActivateSpell(RallySpell.Fireball), Is.True);
+            ReleaseSpellShot(RallySpell.Fireball);
             yield return Travel(12);
             yield return AssertSuspension(() => game.SetPaused(true), () => game.SetPaused(false), "pause");
             yield return AssertSuspension(() => game.SetInputReady(false), () => game.SetInputReady(true), "tracking loss");
@@ -122,12 +137,18 @@ namespace Naispo.Tests
         [UnityTest]
         public IEnumerator LightReplacesTheOldTrailAndBurstsOnlyAtTheDisappearancePosition()
         {
-            Assert.That(game.TryActivateSpell(RallySpell.Fireball), Is.True);
+            ReleaseSpellShot(RallySpell.Fireball);
             yield return Travel(12);
             Assert.That(game.SpellBallEffects.ActiveParticleCount, Is.GreaterThan(0));
             Vector2 vanishPosition = ball.Body.position;
             ball.Body.linearVelocity = Vector2.zero;
-            Assert.That(game.TryActivateSpell(RallySpell.Light), Is.True);
+            Assert.That(game.TryCollectSpell(RallySpell.Light), Is.True);
+            yield return Frames(2);
+            Assert.That(game.LightPhase, Is.EqualTo(RallyLightPhase.None));
+            Assert.That(game.ActiveSpell, Is.EqualTo(RallySpell.Fireball));
+            Assert.That(game.SpellBallEffects.ActiveParticleCount, Is.GreaterThan(0),
+                "A held Light must not erase the active shot's fire trail or trigger an early burst.");
+            game.ApplyPendingSpellToRebound(Vector2.up * 8, -1);
             yield return Frames(2);
             Assert.That(game.LightPhase, Is.EqualTo(RallyLightPhase.Warning));
             Assert.That(BallView.enabled, Is.True);
@@ -169,7 +190,7 @@ namespace Naispo.Tests
         [UnityTest]
         public IEnumerator RestartAndModeChangeClearSpellArtworkAndRestoreTheOrdinaryCore()
         {
-            Assert.That(game.TryActivateSpell(RallySpell.Fireball), Is.True);
+            ReleaseSpellShot(RallySpell.Fireball);
             yield return Travel(12);
             game.RestartGame();
             yield return Frames(2);
@@ -177,7 +198,7 @@ namespace Naispo.Tests
             yield return Until(() => game.CanAdvanceBall, 4, "Restart must serve again.");
             HitAndRelease();
             MoveBall(new Vector2(-6, 3));
-            Assert.That(game.TryActivateSpell(RallySpell.Timer), Is.True);
+            ReleaseSpellShot(RallySpell.Timer);
             yield return Travel(12);
             Assert.That(game.SpellBallEffects.ActiveParticleCount, Is.GreaterThan(0));
 
@@ -202,6 +223,16 @@ namespace Naispo.Tests
             resume();
             yield return Travel(6);
             Assert.That(game.SpellBallEffects.EffectAge, Is.GreaterThan(age + .02f), reason + " must resume the effect clock.");
+        }
+
+        void ReleaseSpellShot(RallySpell spell)
+        {
+            Assert.That(game.TryCollectSpell(spell), Is.True);
+            // Isolate artwork timing without changing the precise travel path.
+            // VersusRallyPlayTests exercises the real barrier's owner/release hand-off.
+            game.ApplyPendingSpellToRebound(Vector2.up * 8, -1);
+            Assert.That(game.PendingSpell(-1), Is.EqualTo(RallySpell.None));
+            Assert.That(game.ActiveSpell, Is.EqualTo(spell));
         }
 
         IEnumerator Travel(int frameCount)

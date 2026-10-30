@@ -128,7 +128,7 @@ namespace Naispo.Tests
             // Keep normal Update/LateUpdate rendering active while controlling the
             // exact warning boundary independently of the test runner's frame rate.
             Time.timeScale = 0;
-            Assert.That(game.TryActivateSpell(RallySpell.Light), Is.True);
+            ReleaseLightShot();
             yield return TwoFrames();
             Assert.That(game.LightPhase, Is.EqualTo(RallyLightPhase.Warning));
             AssertBallVisible(true);
@@ -212,7 +212,7 @@ namespace Naispo.Tests
             foreach (RallySpell spell in new[] { RallySpell.Fireball, RallySpell.Timer })
             {
                 var probe = PrepareCooldownRecontact();
-                Assert.That(game.TryActivateSpell(spell), Is.True);
+                Assert.That(game.TryCollectSpell(spell), Is.True);
                 float remaining = game.SpellSecondsRemaining;
                 float spawnDelay = game.PickupSecondsUntilSpawn;
                 float releasedSpeed = ball.Body.linearVelocity.magnitude;
@@ -224,6 +224,9 @@ namespace Naispo.Tests
                 Assert.That(probe.EnterCount, Is.EqualTo(enters));
                 Assert.That(probe.StayCount, Is.GreaterThan(stays));
                 AssertPendingSpellUnchanged(spell, remaining, spawnDelay, releasedSpeed);
+                // End this case's held item before arranging the next real release.
+                game.ApplyPendingSpellToRebound(Vector2.up * 8, -1);
+                game.VersusState.ClearSpell();
             }
             yield break;
         }
@@ -288,7 +291,7 @@ namespace Naispo.Tests
 
         void ArmLightForContact(bool hidden)
         {
-            Assert.That(game.TryActivateSpell(RallySpell.Light), Is.True);
+            ReleaseLightShot();
             RefreshBallPresentation();
             if (hidden)
             {
@@ -298,6 +301,19 @@ namespace Naispo.Tests
             Assert.That(game.LightPhase,
                 Is.EqualTo(hidden ? RallyLightPhase.Hidden : RallyLightPhase.Warning));
             AssertBallVisible(!hidden);
+        }
+
+        void ReleaseLightShot()
+        {
+            Assert.That(game.TryCollectSpell(RallySpell.Light), Is.True);
+            int owner = game.VersusState.LastHitter;
+            Assert.That(game.PendingSpell(owner), Is.EqualTo(RallySpell.Light));
+            Assert.That(game.LightPhase, Is.EqualTo(RallyLightPhase.None));
+            // The fixture already establishes ownership through a real release.
+            // Use the release hook here to isolate contact/safety edge conditions
+            // without moving the ball out of the precise collision arrangement.
+            game.ApplyPendingSpellToRebound(Vector2.up * 8, owner);
+            Assert.That(game.PendingSpell(owner), Is.EqualTo(RallySpell.None));
         }
 
         void AssertLightContactOutcome(float spawnDelay)
@@ -311,8 +327,9 @@ namespace Naispo.Tests
 
         void AssertPendingSpellUnchanged(RallySpell spell, float remaining, float spawnDelay, float speed)
         {
-            Assert.That(game.ActiveSpell, Is.EqualTo(spell));
-            Assert.That(game.SpellOwner, Is.EqualTo(-1));
+            Assert.That(game.PendingSpell(-1), Is.EqualTo(spell));
+            Assert.That(game.PendingSpell(1), Is.EqualTo(RallySpell.None));
+            Assert.That(game.ActiveSpell, Is.EqualTo(RallySpell.None));
             Assert.That(game.SpellSecondsRemaining, Is.EqualTo(remaining).Within(.001f));
             Assert.That(ball.Body.linearVelocity.magnitude, Is.EqualTo(speed).Within(.03f),
                 "A rejected contact must neither consume the next-return spell nor apply its multiplier.");
@@ -332,7 +349,7 @@ namespace Naispo.Tests
         {
             HitAndRelease();
             MoveBall(new Vector2(-5, 3));
-            Assert.That(game.TryActivateSpell(RallySpell.Light), Is.True);
+            ReleaseLightShot();
             yield return TwoFrames();
             Assert.That(game.LightPhase, Is.EqualTo(RallyLightPhase.Warning));
             InvokeGame("StepLight", RallyVersusState.LightWarningSeconds);
@@ -389,9 +406,11 @@ namespace Naispo.Tests
             Assert.That(game.GetPickupSnapshot(0).Visible, Is.False);
             Assert.That(game.GetPickupSnapshot(1).Visible, Is.False);
             Assert.That(game.PickupCount, Is.Zero);
-            Assert.That(game.ActiveSpell, Is.EqualTo(RallySpell.Timer),
+            Assert.That(game.PendingSpell(-1), Is.EqualTo(RallySpell.Timer),
                 "The last pickup on the complete ball path must replace the earlier spell.");
-            Assert.That(game.SpellOwner, Is.EqualTo(-1));
+            Assert.That(game.PendingSpell(1), Is.EqualTo(RallySpell.None));
+            Assert.That(game.ActiveSpell, Is.EqualTo(RallySpell.None),
+                "Sweeping over pickups must not activate their effect in flight.");
         }
 
         void SetPickup(int index, RallySpell spell, Vector2 position, float age)

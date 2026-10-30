@@ -27,6 +27,9 @@ namespace Naispo.Interaction
         public int SpellOwner { get; private set; }
         public float SpellSecondsRemaining { get; private set; }
 
+        RallySpell leftPendingSpell;
+        RallySpell rightPendingSpell;
+
         public RallyVersusState() => Reset();
 
         public void Reset()
@@ -48,15 +51,39 @@ namespace Naispo.Interaction
         {
             if (!RallyActive || Complete || !IsPlayerSide(side)) return;
             LastHitter = side;
+            ClearSpell();
         }
 
-        public bool TryActivateSpell(RallySpell spell)
+        public bool TryCollectSpell(RallySpell spell)
         {
-            if (!RallyActive || Complete || !IsPlayerSide(LastHitter) || spell == RallySpell.None) return false;
-            ActiveSpell = spell;
-            SpellOwner = LastHitter;
-            SpellSecondsRemaining = spell == RallySpell.Light ? 0 : SpellLifetimeSeconds;
+            if (!RallyActive || Complete || !IsPlayerSide(LastHitter) || !IsCollectibleSpell(spell)) return false;
+            if (LastHitter < 0) leftPendingSpell = spell;
+            else rightPendingSpell = spell;
             return true;
+        }
+
+        // Legacy callers still collect the spell; activation always requires the owner's next return.
+        public bool TryActivateSpell(RallySpell spell) => TryCollectSpell(spell);
+
+        public RallySpell PendingSpell(int side)
+        {
+            if (side == -1) return leftPendingSpell;
+            if (side == 1) return rightPendingSpell;
+            return RallySpell.None;
+        }
+
+        public RallySpell ReleaseSpellForRebound(int playerSide)
+        {
+            if (!RallyActive || Complete || !IsPlayerSide(playerSide) || playerSide != LastHitter)
+                return RallySpell.None;
+            RallySpell spell = PendingSpell(playerSide);
+            if (spell == RallySpell.None) return RallySpell.None;
+            if (playerSide < 0) leftPendingSpell = RallySpell.None;
+            else rightPendingSpell = RallySpell.None;
+            ActiveSpell = spell;
+            SpellOwner = playerSide;
+            SpellSecondsRemaining = spell == RallySpell.Light ? 0 : SpellLifetimeSeconds;
+            return spell;
         }
 
         public void StepSpell(float dt, bool compression)
@@ -72,14 +99,6 @@ namespace Naispo.Interaction
             if (spell == RallySpell.Fireball) return FireballMultiplier;
             if (spell == RallySpell.Timer) return TimerMultiplier;
             return 1f;
-        }
-
-        public float ConsumeSpellMultiplier()
-        {
-            if (ActiveSpell != RallySpell.Fireball && ActiveSpell != RallySpell.Timer) return 1f;
-            float multiplier = SpellMultiplier(ActiveSpell);
-            ClearSpell();
-            return multiplier;
         }
 
         public void ClearSpell()
@@ -105,8 +124,11 @@ namespace Naispo.Interaction
         void ClearRallyEffects()
         {
             LastHitter = 0;
+            leftPendingSpell = rightPendingSpell = RallySpell.None;
             ClearSpell();
         }
         static bool IsPlayerSide(int side) => side == -1 || side == 1;
+        static bool IsCollectibleSpell(RallySpell spell) =>
+            spell == RallySpell.Fireball || spell == RallySpell.Timer || spell == RallySpell.Light;
     }
 }

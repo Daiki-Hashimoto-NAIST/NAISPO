@@ -159,7 +159,7 @@ namespace Naispo.Tests
             ConfigureSide(side);
             PlaceBarrier(new Vector2(CenterX + side * .4f, BarrierY));
             game.VersusState.RegisterBarrierHit(-side);
-            Assert.That(game.VersusState.TryActivateSpell(RallySpell.Fireball), Is.True);
+            Assert.That(game.TryCollectSpell(RallySpell.Fireball), Is.True);
             // This sphere overlaps the nominal full barrier and crosses its height.
             MoveBalls(new Vector2(CenterX - side * .12f, 1.2f), Vector2.down * 4);
             for (int step = 0; step < 10; step++)
@@ -168,7 +168,9 @@ namespace Naispo.Tests
                 AssertFreeFlight("Opponent-centered sphere, side " + side + ", step " + step);
             }
             Assert.That(game.VersusState.LastHitter, Is.EqualTo(-side));
-            Assert.That(game.VersusState.ActiveSpell, Is.EqualTo(RallySpell.Fireball));
+            Assert.That(game.PendingSpell(-side), Is.EqualTo(RallySpell.Fireball),
+                "An opponent's inadmissible contact must leave the collector's item held.");
+            Assert.That(game.ActiveSpell, Is.EqualTo(RallySpell.None));
             Assert.That(game.VersusState.LeftScore + game.VersusState.RightScore, Is.Zero);
         }
 
@@ -290,7 +292,8 @@ namespace Naispo.Tests
             PlaceBarrier(new Vector2(CenterX - .55f, BarrierY), 0, 4);
             MoveBalls(new Vector2(CenterX + .08f, .78f), Vector2.zero);
             game.VersusState.RegisterBarrierHit(1);
-            Assert.That(game.TryActivateSpell(RallySpell.Light), Is.True);
+            Assert.That(game.TryCollectSpell(RallySpell.Light), Is.True);
+            game.ApplyPendingSpellToRebound(Vector2.up * 4, 1);
             Assert.That(game.LightPhase, Is.EqualTo(RallyLightPhase.Warning));
             float warning = game.LightPhaseSecondsRemaining;
             for (int step = 0; step < 8; step++)
@@ -366,8 +369,9 @@ namespace Naispo.Tests
         public IEnumerator CarryingACompressedBallAcrossCenterAbortsWithoutConsumingItsSpell()
         {
             PlaceBarrier(new Vector2(CenterX - .7f, BarrierY));
+            game.VersusState.RegisterBarrierHit(-1);
+            Assert.That(game.TryCollectSpell(RallySpell.Fireball), Is.True);
             game.VersusState.RegisterBarrierHit(1);
-            Assert.That(game.VersusState.TryActivateSpell(RallySpell.Fireball), Is.True);
             Vector2 incoming = Vector2.down * 6;
             MoveBalls(new Vector2(CenterX - .7f, 1.4f), incoming);
             WaitForContact();
@@ -382,13 +386,15 @@ namespace Naispo.Tests
             Assert.That(Vector2.Distance(ball.Body.position, lastAccepted), Is.LessThan(.001f),
                 "Abort must preserve the last accepted position instead of dragging or clamping the held ball.");
             Assert.That(Vector2.Distance(ball.Body.linearVelocity, incoming), Is.LessThan(.02f));
-            Assert.That(game.VersusState.ActiveSpell, Is.EqualTo(RallySpell.Fireball));
+            Assert.That(game.PendingSpell(-1), Is.EqualTo(RallySpell.Fireball));
+            Assert.That(game.ActiveSpell, Is.EqualTo(RallySpell.None));
             Assert.That(ball.Body.simulated, Is.True);
             Assert.That(scene.GetPhysicsScene2D().Simulate(Delta), Is.True);
             Assert.DoesNotThrow(() => barrier.SendMessage("LateUpdate"));
             Tick();
-            Assert.That(game.VersusState.ActiveSpell, Is.EqualTo(RallySpell.Fireball),
+            Assert.That(game.PendingSpell(-1), Is.EqualTo(RallySpell.Fireball),
                 "Neither the abort nor subsequent cleanup may consume a rebound spell.");
+            Assert.That(game.ActiveSpell, Is.EqualTo(RallySpell.None));
             Assert.That(game.VersusState.LeftScore + game.VersusState.RightScore, Is.Zero);
             yield break;
         }

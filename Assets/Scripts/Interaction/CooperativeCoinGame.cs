@@ -644,8 +644,9 @@ namespace Naispo.Interaction
                 float size=scored && i==score-1 ? 6+pop*5 : 6;
                 Fill(new Rect(x+35+i*14-size*.5f,129-size*.5f,size,size),pip);
             }
-            if(ActiveSpell!=RallySpell.None && SpellOwner==side)
-                DrawSpellIcon(new Vector2(x+84,170),ActiveSpell);
+            RallySpell heldSpell=PendingSpell(side);
+            if(heldSpell!=RallySpell.None)
+                DrawSpellIcon(new Vector2(x+49,170),heldSpell);
         }
 
         static void DrawHudLabel(Rect rect,string text,GUIStyle style)

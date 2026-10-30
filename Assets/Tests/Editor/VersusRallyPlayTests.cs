@@ -97,6 +97,8 @@ namespace Naispo.Tests
             Assert.That(game.VersusState.LeftScore+game.VersusState.RightScore,Is.Zero);
             Assert.That(game.PickupCount,Is.Zero);
             Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+            Assert.That(game.PendingSpell(-1),Is.EqualTo(RallySpell.None));
+            Assert.That(game.PendingSpell(1),Is.EqualTo(RallySpell.None));
             Assert.That(game.WaitingToServe,Is.True);
         }
 
@@ -177,10 +179,13 @@ namespace Naispo.Tests
             }
             // Set a pending effect independently of its artwork so both reset paths are exercised.
             Assert.That(game.VersusState.TryActivateSpell(RallySpell.Fireball),Is.True);
-            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.Fireball));
+            Assert.That(game.PendingSpell(-1),Is.EqualTo(RallySpell.Fireball));
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
             game.SetMode(RallyMode.StarCollection);
             Assert.That(game.PickupCount,Is.Zero);
             Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+            Assert.That(game.PendingSpell(-1),Is.EqualTo(RallySpell.None));
+            Assert.That(game.PendingSpell(1),Is.EqualTo(RallySpell.None));
             Assert.That(game.VersusState.LastHitter,Is.Zero);
             Assert.That(game.VersusState.Winner,Is.Zero);
             Assert.That(game.TeamScore,Is.Zero);
@@ -200,6 +205,8 @@ namespace Naispo.Tests
             Assert.That(game.TryActivateSpell(RallySpell.Fireball),Is.True);
             game.RestartGame();
             Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+            Assert.That(game.PendingSpell(-1),Is.EqualTo(RallySpell.None));
+            Assert.That(game.PendingSpell(1),Is.EqualTo(RallySpell.None));
             Assert.That(game.VersusState.LastHitter,Is.Zero);
             Assert.That(game.PickupCount,Is.Zero);
         }
@@ -266,28 +273,50 @@ namespace Naispo.Tests
             yield return TwoFrames();
             Assert.That(game.PickupCount,Is.Zero,
                 $"One swept frame must collect both intersections. First {first.Position}, second {second.Position}, body {ball.Body.position}");
-            Assert.That(game.ActiveSpell,Is.EqualTo(second.Spell),
+            Assert.That(game.PendingSpell(-1),Is.EqualTo(second.Spell),
                 "The last intersection in travel order replaces the first spell.");
-            Assert.That(game.SpellOwner,Is.EqualTo(-1));
+            Assert.That(game.PendingSpell(1),Is.EqualTo(RallySpell.None));
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None),"Collecting an item must not alter the ball in flight.");
         }
 
         [UnityTest]
-        public IEnumerator FireballAndTimerChangeTheNextRealReboundAndKeepTheGlobalCap()
+        public IEnumerator AllThreeItemsWaitForTheirCollectorsNextRealReleaseAndKeepTheGlobalCap()
         {
             float ordinary=HitAndRelease(rightBarrier);
-            Assert.That(game.TryActivateSpell(RallySpell.Fireball),Is.True);
-            float boosted=HitAndRelease(leftBarrier);
-            Assert.That(boosted,Is.EqualTo(ordinary*RallyVersusState.FireballMultiplier).Within(.03f));
-            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None),"One release must consume the spell.");
+            foreach(var spell in new[] { RallySpell.Fireball,RallySpell.Timer,RallySpell.Light })
+            {
+                if(game.VersusState.LastHitter!=1) HitAndRelease(rightBarrier);
+                Assert.That(game.TryCollectSpell(spell),Is.True);
+                Assert.That(game.PendingSpell(1),Is.EqualTo(spell));
+                Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+                Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.None),"Holding Light must not start its warning.");
 
-            float ordinaryAgain=HitAndRelease(rightBarrier);
-            Assert.That(ordinaryAgain,Is.EqualTo(ordinary).Within(.03f),"The following return must be ordinary.");
-            Assert.That(game.TryActivateSpell(RallySpell.Timer),Is.True);
-            float slowed=HitAndRelease(leftBarrier);
-            Assert.That(slowed,Is.EqualTo(ordinary*RallyVersusState.TimerMultiplier).Within(.03f));
+                float opponentReturn=HitAndRelease(leftBarrier);
+                Assert.That(opponentReturn,Is.EqualTo(ordinary).Within(.03f),"The opponent's return must be ordinary.");
+                Assert.That(game.PendingSpell(1),Is.EqualTo(spell),"An opponent must not spend the collector's item.");
+                Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
 
-            Assert.That(game.TryActivateSpell(RallySpell.Fireball),Is.True);
-            float capped=HitAndRelease(rightBarrier,2f);
+                BeginHit(rightBarrier);
+                Assert.That(game.PendingSpell(1),Is.EqualTo(spell),"Compression must retain the item until actual release.");
+                Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+                Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.None));
+                rightBarrier.Step(.25f);
+                Assert.That(ball.IsInBarrierImpact,Is.False);
+                float multiplier=spell==RallySpell.Fireball ? RallyVersusState.FireballMultiplier
+                    : spell==RallySpell.Timer ? RallyVersusState.TimerMultiplier : 1f;
+                Assert.That(ball.Body.linearVelocity.magnitude,Is.EqualTo(ordinary*multiplier).Within(.03f));
+                Assert.That(game.PendingSpell(1),Is.EqualTo(RallySpell.None));
+                Assert.That(game.ActiveSpell,Is.EqualTo(spell),"The released shot must retain its spell presentation.");
+                Assert.That(game.SpellOwner,Is.EqualTo(1));
+                if(spell==RallySpell.Light)
+                    Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.Warning));
+
+                Assert.That(HitAndRelease(leftBarrier),Is.EqualTo(ordinary).Within(.03f));
+                Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None),"The following accepted return clears the previous shot's effect.");
+            }
+            Assert.That(game.TryCollectSpell(RallySpell.Fireball),Is.True);
+            HitAndRelease(rightBarrier);
+            float capped=HitAndRelease(leftBarrier,2f);
             Assert.That(capped,Is.EqualTo(ball.maximumSpeed).Within(.03f),
                 "The existing maximumSpeed must cap a boosted hand return.");
             yield break;
@@ -304,19 +333,60 @@ namespace Naispo.Tests
             rightBarrier.Step(.25f);
             Assert.That(ball.IsInBarrierImpact,Is.False);
             Assert.That(ball.Body.linearVelocity.magnitude,Is.EqualTo(ordinary*RallyVersusState.FireballMultiplier).Within(.03f));
-            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+            Assert.That(game.PendingSpell(1),Is.EqualTo(RallySpell.None));
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.Fireball));
 
             BeginHit(leftBarrier);
             Assert.That(game.TryActivateSpell(RallySpell.Timer),Is.True);
             leftBarrier.CancelImpact(false);
             Assert.That(ball.IsInBarrierImpact,Is.False);
             Assert.That(ball.Body.linearVelocity,Is.EqualTo(Vector2.zero));
-            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.Timer),
+            Assert.That(game.PendingSpell(-1),Is.EqualTo(RallySpell.Timer),
                 "A cancelled zero-speed release must not spend the pending spell.");
-            float slowed=HitAndRelease(rightBarrier);
-            Assert.That(slowed,Is.EqualTo(ordinary*RallyVersusState.TimerMultiplier).Within(.03f));
             Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+            Assert.That(HitAndRelease(rightBarrier),Is.EqualTo(ordinary).Within(.03f));
+            Assert.That(game.PendingSpell(-1),Is.EqualTo(RallySpell.Timer));
+            float slowed=HitAndRelease(leftBarrier);
+            Assert.That(slowed,Is.EqualTo(ordinary*RallyVersusState.TimerMultiplier).Within(.03f));
+            Assert.That(game.PendingSpell(-1),Is.EqualTo(RallySpell.None));
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.Timer));
             yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator BothPlayersKeepTheirOwnItemsThroughSuspensionAndLoseThemAtThePoint()
+        {
+            HitAndRelease(rightBarrier);
+            Assert.That(game.TryCollectSpell(RallySpell.Light),Is.True);
+            HitAndRelease(leftBarrier);
+            Assert.That(game.TryCollectSpell(RallySpell.Fireball),Is.True);
+            Assert.That(game.TryCollectSpell(RallySpell.Timer),Is.True);
+            MoveBall(new Vector2(-6,3));
+            foreach(var blocker in new[] { 0,1,2 })
+            {
+                if(blocker==0) game.SetPaused(true);
+                else if(blocker==1) game.SetInputReady(false);
+                else game.ExternalOverlayOpen=true;
+                yield return new WaitForSecondsRealtime(.2f);
+                Assert.That(game.PendingSpell(-1),Is.EqualTo(RallySpell.Timer),"A replacement belongs only to its collector.");
+                Assert.That(game.PendingSpell(1),Is.EqualTo(RallySpell.Light));
+                Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
+                Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.None),"A held Light has no running clock.");
+                Assert.That(game.BallPresentationVisible,Is.True);
+                if(blocker==0) game.SetPaused(false);
+                else if(blocker==1) game.SetInputReady(true);
+                else game.ExternalOverlayOpen=false;
+            }
+            Assert.That(game.ApplyPendingSpellToRebound(Vector2.zero,-1),Is.EqualTo(Vector2.zero));
+            Assert.That(game.PendingSpell(-1),Is.EqualTo(RallySpell.Timer),"A zero-speed cancellation must not spend a held item.");
+            MoveBall(new Vector2(-3,game.MatchFloor+1));
+            yield return TwoFrames();
+            MoveBall(new Vector2(-3,game.MatchFloor-.4f));
+            yield return TwoFrames();
+            Assert.That(game.VersusState.RightScore,Is.EqualTo(1));
+            Assert.That(game.PendingSpell(-1),Is.EqualTo(RallySpell.None));
+            Assert.That(game.PendingSpell(1),Is.EqualTo(RallySpell.None));
+            Assert.That(game.ActiveSpell,Is.EqualTo(RallySpell.None));
         }
 
         [UnityTest]
@@ -324,7 +394,7 @@ namespace Naispo.Tests
         {
             HitAndRelease(leftBarrier);
             MoveBall(new Vector2(-5,3));
-            Assert.That(game.TryActivateSpell(RallySpell.Light),Is.True);
+            ArmLightShot();
             yield return TwoFrames();
             Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.Warning));
             Assert.That(game.BallPresentationVisible,Is.True);
@@ -357,7 +427,7 @@ namespace Naispo.Tests
 
             MoveBall(new Vector2(-5,3));
             yield return TwoFrames();
-            Assert.That(game.TryActivateSpell(RallySpell.Light),Is.True);
+            ArmLightShot();
             yield return null;
             Assert.That(game.LightPhase,Is.Not.EqualTo(RallyLightPhase.None));
             BeginHit(leftBarrier);
@@ -371,7 +441,7 @@ namespace Naispo.Tests
         {
             HitAndRelease(leftBarrier);
             MoveBall(new Vector2(-5,3));
-            Assert.That(game.TryActivateSpell(RallySpell.Light),Is.True);
+            ArmLightShot();
             yield return TwoFrames();
             Assert.That(game.LightPhase,Is.EqualTo(RallyLightPhase.Warning));
             float warning=game.LightPhaseSecondsRemaining;
@@ -430,6 +500,16 @@ namespace Naispo.Tests
             Assert.That(ball.IsInBarrierImpact,Is.False);
             Assert.That(ball.Body.simulated,Is.True);
             return ball.Body.linearVelocity.magnitude;
+        }
+
+        void ArmLightShot()
+        {
+            Assert.That(game.TryCollectSpell(RallySpell.Light),Is.True);
+            int owner=game.VersusState.LastHitter;
+            // These cases isolate the post-release Light safety/pause rules;
+            // AllThreeItemsWaitForTheirCollectorsNextRealRelease covers real capture and release.
+            game.ApplyPendingSpellToRebound(Vector2.up*8,owner);
+            Assert.That(game.PendingSpell(owner),Is.EqualTo(RallySpell.None));
         }
 
         void BeginHit(ElasticBarrier barrier)

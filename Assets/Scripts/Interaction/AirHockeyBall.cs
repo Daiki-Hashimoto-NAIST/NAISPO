@@ -56,10 +56,10 @@ namespace Naispo.Interaction
             impactOwner=null;
             previousImpact=owner; impactCooldown=Time.fixedTime+.12f;
             Body.interpolation=freeInterpolation;
-            // One narrow versus hook consumes an armed return spell immediately
-            // before the existing final speed clamp. A cancelled zero rebound
-            // never reaches it, so the spell is not wasted.
-            if(CooperativeGame!=null)rebound=CooperativeGame.ApplyPendingSpellToRebound(rebound);
+            // Only the returning player's held item can enchant this launch.
+            // Keep the existing final speed clamp; a cancelled zero rebound
+            // does not spend either player's item.
+            if(CooperativeGame!=null)rebound=CooperativeGame.ApplyPendingSpellToRebound(rebound,owner.PlayerSide);
             Body.linearVelocity=Vector2.ClampMagnitude(rebound,maximumSpeed);
             SetGameplaySimulation(gameplaySimulation && (CooperativeGame==null || CooperativeGame.CanAdvanceBall));
         }
